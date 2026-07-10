@@ -75,7 +75,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
       // esperar a que el programa vuelva a levantar y recargar
+      let intentos = 0;
       const reintentar = setInterval(async () => {
+        intentos++;
+        if (intentos > 60) {   // ~2 minutos: algo se trabó, avisar en vez de esperar infinito
+          clearInterval(reintentar);
+          alert("La actualización está tardando más de lo normal.\n\n" +
+                "1. Cerrá esta pestaña.\n" +
+                "2. Abrí el programa de nuevo desde el acceso directo (si no abre, esperá un minuto y reintentá).\n" +
+                "3. Si sigue sin abrir, reinstalá con el Setup desde GitHub: los datos no se pierden.");
+          window.location.reload();
+          return;
+        }
         try {
           const e2 = await (await fetch("/api/update-estado", { cache: "no-store" })).json();
           if (e2.actual !== est.actual || !e2.hay_update) {

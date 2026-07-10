@@ -109,16 +109,33 @@ def aplicar():
     # de version que muestra "Agregar o quitar programas"
     clave_arp = (r"HKCU\Software\Microsoft\Windows\CurrentVersion"
                  r"\Uninstall\ControlHerramientas_is1")
+    # el .bat corre oculto y deja un log en %TEMP% por si algo falla.
+    # - espera con tope: si el programa no cierra solo en ~20 s, lo fuerza
+    # - robocopy con reintentos acotados (/R:3 /W:2): sin eso, un archivo
+    #   trabado lo deja reintentando durante horas
+    # comandos con ruta absoluta: el bat no depende del PATH de la maquina
     bat = tmp / "aplicar.bat"
     bat.write_text(f"""@echo off
+set S32=%SystemRoot%\\System32
+set LOG=%TEMP%\\control-herramientas-update.log
+echo [%date% %time%] actualizando a v{version_nueva} > "%LOG%"
+set INTENTOS=0
 :espera
-timeout /t 2 /nobreak >nul
-tasklist /FI "IMAGENAME eq ControlHerramientas.exe" | find /I "ControlHerramientas.exe" >nul && goto espera
-robocopy "{nueva}" "{destino}" /MIR /XD data >nul
-reg query "{clave_arp}" >nul 2>nul && reg add "{clave_arp}" /v DisplayVersion /t REG_SZ /d "{version_nueva}" /f >nul
+"%S32%\\ping.exe" -n 3 127.0.0.1 >nul 2>nul
+"%S32%\\tasklist.exe" /FI "IMAGENAME eq ControlHerramientas.exe" 2>nul | "%S32%\\find.exe" /I "ControlHerramientas.exe" >nul || goto copiar
+set /a INTENTOS+=1
+if %INTENTOS% LSS 10 goto espera
+echo el programa no cerro solo: forzando cierre >> "%LOG%"
+"%S32%\\taskkill.exe" /F /IM ControlHerramientas.exe >nul 2>nul
+"%S32%\\ping.exe" -n 3 127.0.0.1 >nul 2>nul
+:copiar
+"%S32%\\robocopy.exe" "{nueva}" "{destino}" /MIR /XD data /R:3 /W:2 >> "%LOG%" 2>&1
+if errorlevel 8 echo ERROR: robocopy no pudo copiar todo >> "%LOG%"
+"%S32%\\reg.exe" query "{clave_arp}" >nul 2>nul && "%S32%\\reg.exe" add "{clave_arp}" /v DisplayVersion /t REG_SZ /d "{version_nueva}" /f >nul
+echo [%date% %time%] relanzando >> "%LOG%"
 start "" "{destino}\\ControlHerramientas.exe"
 """, encoding="ascii")
     subprocess.Popen(["cmd", "/c", str(bat)],
-                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008)  # DETACHED_PROCESS
+                     creationflags=0x08000000)  # CREATE_NO_WINDOW: sin ventana de cmd
     threading.Timer(1.0, os._exit, args=(0,)).start()
     return True, "Actualizando: el programa se reinicia solo en unos segundos."
