@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Maestros — Pañol{% endblock %}
+{% block content %}
+<h1>Maestros</h1>
+<p class="nota">Alta de herramientas, trabajadores, almacenistas y condiciones.</p>
+
+<div class="dos-col">
+  <section class="panel">
+    <h2>Nueva herramienta</h2>
+    <form method="post" class="grid">
+      <input type="hidden" name="que" value="herramienta">
+      <div class="campo chico"><label>Código</label><input name="codigo" required></div>
+      <div class="campo ancho"><label>Nombre</label><input name="nombre" required></div>
+      <div class="campo chico"><label>Cantidad</label><input type="number" name="cantidad" value="1" min="0"></div>
+      <div class="campo chico"><label>Módulo</label><input name="modulo" placeholder="1-7 / PARED"></div>
+      <div class="campo chico"><label>Estante</label><input name="estante" placeholder="A / B / P"></div>
+      <div class="campo ancho"><label>Ubicación (texto)</label><input name="ubicacion" placeholder="Ej.: Góndola 3 - Estante A"></div>
+      <div class="campo ancho"><label>Detalle</label><input name="detalle"></div>
+      <div class="campo"><button class="btn">Agregar</button></div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Nuevo trabajador</h2>
+    <form method="post" class="grid">
+      <input type="hidden" name="que" value="empleado">
+      <div class="campo ancho"><label>Nombre</label><input name="nombre" required></div>
+      <div class="campo chico"><label>DNI</label><input name="dni"></div>
+      <div class="campo"><button class="btn">Agregar</button></div>
+    </form>
+
+    <h2>Nuevo almacenista</h2>
+    <form method="post" class="grid">
+      <input type="hidden" name="que" value="almacenista">
+      <div class="campo ancho"><label>Nombre</label><input name="nombre" required></div>
+      <div class="campo chico"><label>DNI</label><input name="dni"></div>
+      <div class="campo"><button class="btn">Agregar</button></div>
+    </form>
+    <ul class="listado">
+      {% for a in almacenistas %}
+        <li class="{% if not a.activo %}baja{% endif %}">{{ a.nombre }}
+          <form method="post" action="{{ url_for('maestros_baja') }}" class="inline">
+            <input type="hidden" name="tabla" value="almacenistas">
+            <input type="hidden" name="id" value="{{ a.id }}">
+            <button class="btn mini sec">{{ 'Reactivar' if not a.activo else 'Dar de baja' }}</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <h2>Nueva condición de devolución</h2>
+    <form method="post" class="grid">
+      <input type="hidden" name="que" value="condicion">
+      <div class="campo ancho"><label>Nombre</label><input name="nombre" required></div>
+      <div class="campo"><button class="btn">Agregar</button></div>
+    </form>
+    <ul class="listado">
+      {% for c in condiciones %}<li>{{ c.nombre }}</li>{% endfor %}
+    </ul>
+  </section>
+</div>
+{% endblock %}

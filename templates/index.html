@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="cards">
+  <div class="card"><div class="num">{{ stats.herramientas }}</div><div class="lbl">Herramientas</div></div>
+  <div class="card"><div class="num">{{ stats.prestadas }}</div><div class="lbl">Unidades prestadas</div></div>
+  <div class="card"><div class="num">{{ stats.empleados }}</div><div class="lbl">Trabajadores</div></div>
+  <div class="card"><div class="num">{{ stats.mov_hoy }}</div><div class="lbl">Movimientos hoy</div></div>
+</div>
+
+<div class="acciones">
+  <a class="btn grande" href="{{ url_for('registrar', tipo='ENTREGA') }}">➜ Registrar entrega</a>
+  <a class="btn grande sec" href="{{ url_for('registrar', tipo='DEVOLUCION') }}">⮐ Registrar devolución</a>
+</div>
+
+<div class="dos-col">
+  <section>
+    <h2>Pendientes de devolución</h2>
+    {% if atrasados %}
+      <p class="aviso-atraso">⚠ {{ atrasados }} sin devolver hace más de 1 día</p>
+    {% endif %}
+    {% if pendientes %}
+    <table>
+      <thead><tr><th>Trabajador</th><th>Herramienta</th><th class="der">Cant.</th><th>Desde</th></tr></thead>
+      <tbody>
+      {% for p in pendientes %}
+        <tr>
+          <td><a href="{{ url_for('empleado', eid=p.empleado_id) }}">{{ p.empleado }}</a></td>
+          <td>[{{ p.codigo }}] {{ p.herramienta }}</td>
+          <td class="der {% if p.pendiente < 0 %}rojo{% endif %}">{{ p.pendiente }}</td>
+          <td>{% if p.dias is not none and p.dias > 1 and p.pendiente > 0 %}
+                <span class="tag atras">hace {{ p.dias }} días</span>
+              {% elif p.ult_entrega %}{{ p.ult_entrega }}{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="vacio">No hay herramientas sin devolver. 👌</p>{% endif %}
+  </section>
+
+  <section>
+    <h2>Últimos movimientos</h2>
+    {% if ultimos %}
+    <table>
+      <thead><tr><th>Fecha</th><th>Tipo</th><th>Trabajador</th><th>Herramienta</th><th class="der">Cant.</th></tr></thead>
+      <tbody>
+      {% for m in ultimos %}
+        <tr>
+          <td>{{ m.fecha }}</td>
+          <td><span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ m.tipo }}</span></td>
+          <td>{{ m.empleado }}</td>
+          <td>[{{ m.codigo }}] {{ m.herramienta }}</td>
+          <td class="der">{{ m.cantidad }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="vacio">Todavía no hay movimientos.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

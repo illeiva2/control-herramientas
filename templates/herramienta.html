@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}[{{ h.codigo }}] {{ h.nombre }} — Pañol{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('herramientas') }}">← Herramientas</a></p>
+<h1>[{{ h.codigo }}] {{ h.nombre }}</h1>
+{% if h.detalle %}<p class="detalle">{{ h.detalle }}</p>{% endif %}
+
+<div class="cards">
+  <div class="card"><div class="num">{{ h.cantidad }}</div><div class="lbl">Inventario</div></div>
+  <div class="card"><div class="num">{{ h.pendiente }}</div><div class="lbl">Prestadas</div></div>
+  <div class="card"><div class="num">{{ h.disponible }}</div><div class="lbl">Disponibles</div></div>
+  <div class="card"><div class="num chico">{{ h.ubicacion or '—' }}</div><div class="lbl">Ubicación</div></div>
+</div>
+
+{% if quien %}
+<h2>Quién la tiene</h2>
+<table>
+  <thead><tr><th>Trabajador</th><th class="der">Cantidad</th></tr></thead>
+  <tbody>
+  {% for w in quien %}
+    <tr><td><a href="{{ url_for('empleado', eid=w.id) }}">{{ w.nombre }}</a></td>
+        <td class="der">{{ w.pendiente }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Historial</h2>
+{% if historial %}
+<table>
+  <thead><tr><th>Fecha</th><th>Tipo</th><th>Trabajador</th><th class="der">Cant.</th><th>Condición</th><th>Almacenista</th></tr></thead>
+  <tbody>
+  {% for m in historial %}
+    <tr>
+      <td>{{ m.fecha }}</td>
+      <td><span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ m.tipo }}</span></td>
+      <td>{{ m.empleado }}</td>
+      <td class="der">{{ m.cantidad }}</td>
+      <td>{{ m.condicion or '' }}</td>
+      <td>{{ m.almacenista or '' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="vacio">Sin movimientos registrados.</p>{% endif %}
+{% endblock %}

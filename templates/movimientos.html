@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Historial — Pañol{% endblock %}
+{% block content %}
+<h1>Historial de movimientos</h1>
+<form method="get" class="buscador">
+  <input type="search" name="q" value="{{ q }}" placeholder="Trabajador, herramienta o código…">
+  <select name="tipo">
+    <option value="">Todos</option>
+    <option value="ENTREGA" {% if tipo == 'ENTREGA' %}selected{% endif %}>Entregas</option>
+    <option value="DEVOLUCION" {% if tipo == 'DEVOLUCION' %}selected{% endif %}>Devoluciones</option>
+  </select>
+  <input type="date" name="desde" value="{{ desde }}" title="Desde">
+  <input type="date" name="hasta" value="{{ hasta }}" title="Hasta">
+  <button class="btn">Filtrar</button>
+  <a class="btn sec" href="{{ url_for('exportar_movimientos') }}">⬇ Exportar CSV</a>
+</form>
+<p class="nota">{{ rows|length }} movimiento(s){% if rows|length == 500 %} (mostrando los últimos 500){% endif %}</p>
+<table>
+  <thead><tr><th>Fecha</th><th>Tipo</th><th>Trabajador</th><th>Herramienta</th>
+             <th class="der">Cant.</th><th>Condición</th><th>Almacenista</th><th></th></tr></thead>
+  <tbody>
+  {% for m in rows %}
+    <tr>
+      <td>{{ m.fecha }}</td>
+      <td><span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ m.tipo }}</span></td>
+      <td>{{ m.empleado }}</td>
+      <td>[{{ m.codigo }}] {{ m.herramienta }}</td>
+      <td class="der">{{ m.cantidad }}</td>
+      <td>{{ m.condicion or '' }}</td>
+      <td>{{ m.almacenista or '' }}</td>
+      <td>
+        <form method="post" action="{{ url_for('eliminar_movimiento', mid=m.id) }}"
+              onsubmit="return confirm('¿Eliminar este movimiento? Solo usar para corregir errores de carga.')">
+          <button class="btn mini peligro" title="Eliminar (corregir error)">✕</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

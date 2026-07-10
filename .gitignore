@@ -1,0 +1,13 @@
+# datos reales: NUNCA subir (contiene nombres y DNI del personal)
+data/
+
+# builds y paquetes
+dist/
+build/
+instalador/
+*.zip
+*.spec
+
+# python
+__pycache__/
+.venv/

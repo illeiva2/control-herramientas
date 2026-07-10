@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Herramientas — Pañol{% endblock %}
+{% block content %}
+<h1>Herramientas</h1>
+
+<div class="buscador" id="filtro-htas">
+  <input type="search" id="buscar-hta" value="{{ q }}"
+         placeholder="Buscar por código, nombre o detalle… (filtra al escribir)" autofocus>
+  <select id="filtro-modulo">
+    <option value="">Todas las ubicaciones</option>
+    {% for valor, nombre in modulos %}
+      <option value="{{ valor }}">{{ nombre }}</option>
+    {% endfor %}
+  </select>
+  <label class="forzar" title="Mostrar solo herramientas con unidades prestadas">
+    <input type="checkbox" id="filtro-prestadas"> Solo prestadas
+  </label>
+</div>
+<p class="nota"><span id="contador">{{ total }}</span> herramienta(s)</p>
+
+<table id="tabla-htas">
+  <thead>
+    <tr><th>Código</th><th>Herramienta</th>
+        <th class="der">Inventario</th><th class="der">Prestadas</th><th class="der">Disponibles</th></tr>
+  </thead>
+  {% for g in grupos %}
+  <tbody class="grupo" data-modulo="{{ g.modulo }}">
+    <tr class="grupo-hdr">
+      <td colspan="5">📍 {{ g.etiqueta }} <span class="grupo-n">({{ g["items"]|length }})</span></td>
+    </tr>
+    {% for h in g["items"] %}
+    <tr class="fila-hta" data-buscar="{{ (h.codigo ~ ' ' ~ h.nombre ~ ' ' ~ (h.detalle or ''))|lower }}"
+        data-prestadas="{{ 1 if h.pendiente > 0 else 0 }}">
+      <td>{{ h.codigo }}</td>
+      <td><a href="{{ url_for('herramienta', hid=h.id) }}">{{ h.nombre }}</a>
+          {% if h.detalle %}<div class="detalle">{{ h.detalle }}</div>{% endif %}</td>
+      <td class="der">{{ h.cantidad }}</td>
+      <td class="der {% if h.pendiente > 0 %}naranja{% endif %}">{{ h.pendiente }}</td>
+      <td class="der {% if h.disponible <= 0 %}rojo{% endif %}">{{ h.disponible }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  {% endfor %}
+</table>
+<p class="vacio" id="sin-resultados" hidden>Ninguna herramienta coincide con la búsqueda.</p>
+{% endblock %}

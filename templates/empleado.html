@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ e.nombre }} — Pañol{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('empleados') }}">← Trabajadores</a></p>
+<h1>{{ e.nombre }}</h1>
+{% if e.dni %}<p class="nota">DNI: {{ e.dni }}</p>{% endif %}
+
+<div class="acciones">
+  <a class="btn" href="{{ url_for('registrar', tipo='ENTREGA', empleado_id=e.id) }}">➜ Entregarle</a>
+  <a class="btn sec" href="{{ url_for('registrar', tipo='DEVOLUCION', empleado_id=e.id) }}">⮐ Recibir devolución</a>
+</div>
+
+<h2>Tiene pendiente</h2>
+{% if tiene %}
+<table>
+  <thead><tr><th>Código</th><th>Herramienta</th><th>Ubicación</th><th class="der">Cantidad</th></tr></thead>
+  <tbody>
+  {% for t in tiene %}
+    <tr>
+      <td>{{ t.codigo }}</td>
+      <td><a href="{{ url_for('herramienta', hid=t.id) }}">{{ t.nombre }}</a></td>
+      <td>{{ t.ubicacion or '' }}</td>
+      <td class="der">{{ t.pendiente }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="vacio">No tiene herramientas pendientes. 👌</p>{% endif %}
+
+<h2>Historial</h2>
+{% if historial %}
+<table>
+  <thead><tr><th>Fecha</th><th>Tipo</th><th>Herramienta</th><th class="der">Cant.</th><th>Condición</th></tr></thead>
+  <tbody>
+  {% for m in historial %}
+    <tr>
+      <td>{{ m.fecha }}</td>
+      <td><span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ m.tipo }}</span></td>
+      <td>[{{ m.codigo }}] {{ m.herramienta }}</td>
+      <td class="der">{{ m.cantidad }}</td>
+      <td>{{ m.condicion or '' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="vacio">Sin movimientos registrados.</p>{% endif %}
+{% endblock %}
