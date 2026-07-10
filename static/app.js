@@ -110,11 +110,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const selModulo = document.getElementById("filtro-modulo");
   const soloPrestadas = document.getElementById("filtro-prestadas");
   const contador = document.getElementById("contador");
-  const grupos = [...document.querySelectorAll("#tabla-htas .grupo")];
+  const btnExpandir = document.getElementById("btn-expandir");
+  const grupos = [...document.querySelectorAll("#catalogo .grupo")];
 
   function filtrar() {
     const q = normalizar(buscar.value.trim());
     const mod = selModulo.value;
+    const filtrando = q || mod || soloPrestadas.checked;
     let visibles = 0;
     grupos.forEach((g) => {
       let enGrupo = 0;
@@ -130,16 +132,53 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       g.querySelector(".grupo-n").textContent = `(${enGrupo})`;
       g.hidden = enGrupo === 0;
+      // al filtrar, abrir las secciones con resultados; sin filtro, colapsar
+      if (filtrando) g.open = enGrupo > 0;
       visibles += enGrupo;
     });
+    if (!filtrando) grupos.forEach((g) => { g.open = false; });
     contador.textContent = visibles;
     document.getElementById("sin-resultados").hidden = visibles > 0;
   }
+
+  let expandido = false;
+  btnExpandir.addEventListener("click", () => {
+    expandido = !expandido;
+    grupos.forEach((g) => { if (!g.hidden) g.open = expandido; });
+    btnExpandir.textContent = expandido ? "Colapsar todo" : "Expandir todo";
+  });
 
   buscar.addEventListener("input", filtrar);
   selModulo.addEventListener("change", filtrar);
   soloPrestadas.addEventListener("change", filtrar);
   if (buscar.value) filtrar();
+});
+
+// ------- autocompletado para agregar herramientas a una caja -------
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.getElementById("form-agregar-caja");
+  if (!form) return;
+  const infoHta = document.getElementById("info-hta");
+  const hidden = document.getElementById("herramienta_id");
+  combobox({
+    input: document.getElementById("herramienta-buscar"),
+    hidden,
+    panel: document.getElementById("herramienta-sug"),
+    url: "/api/herramientas",
+    render: (it) =>
+      `<div><b>[${it.codigo}]</b> ${it.nombre}</div>` +
+      `<div class="sub">${it.ubicacion || ""} — disp. en pañol: ${it.disponible}</div>`,
+    onPick: (it) => {
+      infoHta.textContent = it
+        ? `Stock pañol: ${it.cantidad} · Disponibles: ${it.disponible}` : "";
+    },
+  });
+  form.addEventListener("submit", (e) => {
+    if (!hidden.value) {
+      e.preventDefault();
+      alert("Elegí la herramienta desde la lista de sugerencias.");
+    }
+  });
 });
 
 document.addEventListener("DOMContentLoaded", () => {

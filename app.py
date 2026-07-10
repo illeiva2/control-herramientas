@@ -222,7 +222,13 @@ def herramienta(hid):
         LEFT JOIN almacenistas a ON a.id = m.almacenista_id
         WHERE m.herramienta_id = ? ORDER BY m.fecha DESC, m.id DESC LIMIT 200
     """, (hid,)).fetchall()
-    return render_template("herramienta.html", h=h, quien=quien, historial=historial)
+    en_cajas = c.execute("""
+        SELECT k.id, k.nombre, i.actual FROM caja_items i
+        JOIN cajas k ON k.id = i.caja_id
+        WHERE i.herramienta_id = ? AND i.actual > 0 ORDER BY k.nombre
+    """, (hid,)).fetchall()
+    return render_template("herramienta.html", h=h, quien=quien, historial=historial,
+                           en_cajas=en_cajas)
 
 
 @app.route("/empleados")
@@ -321,6 +327,238 @@ def exportar_movimientos():
         w.writerow(list(r))
     return Response("﻿" + buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": "attachment; filename=movimientos.csv"})
+
+
+# ---------------------------------------------------------------- cajas
+
+def estado_caja(c, caja_id):
+    ev = c.execute("""SELECT tipo, fecha, destino FROM caja_eventos
+                      WHERE caja_id = ? ORDER BY id DESC LIMIT 1""", (caja_id,)).fetchone()
+    if ev and ev["tipo"] == "ENVIO":
+        return {"en_campo": True, "texto": f"En el campo — {ev['destino'] or 'sin destino'} (desde {ev['fecha']})"}
+    return {"en_campo": False, "texto": "En el pañol"}
+
+
+@app.route("/cajas", methods=["GET", "POST"])
+def cajas():
+    c = db()
+    if request.method == "POST":
+        try:
+            c.execute("INSERT INTO cajas (nombre, descripcion) VALUES (?,?)",
+                      (request.form["nombre"].strip(),
+                       request.form.get("descripcion", "").strip() or None))
+            c.commit()
+            flash("Caja creada. Ahora cargale su dotación de herramientas.", "ok")
+        except sqlite3.IntegrityError:
+            flash("Ya existe una caja con ese nombre.", "error")
+        return redirect(url_for("cajas"))
+    filas = c.execute("""
+        SELECT k.*, COUNT(i.id) AS items,
+               COALESCE(SUM(i.dotacion), 0) AS dotacion,
+               COALESCE(SUM(i.actual), 0) AS actual,
+               COALESCE(SUM(CASE WHEN i.actual < i.dotacion THEN i.dotacion - i.actual END), 0) AS faltantes
+        FROM cajas k LEFT JOIN caja_items i ON i.caja_id = k.id
+        WHERE k.activo = 1 GROUP BY k.id ORDER BY k.nombre
+    """).fetchall()
+    lista = [dict(f, **estado_caja(c, f["id"])) for f in filas]
+    return render_template("cajas.html", cajas=lista)
+
+
+@app.route("/cajas/<int:kid>")
+def caja(kid):
+    c = db()
+    k = c.execute("SELECT * FROM cajas WHERE id = ?", (kid,)).fetchone()
+    if not k:
+        return redirect(url_for("cajas"))
+    items = c.execute("""
+        SELECT i.*, h.codigo, h.nombre, h.cantidad AS stock_panol
+        FROM caja_items i JOIN herramientas h ON h.id = i.herramienta_id
+        WHERE i.caja_id = ? AND (i.dotacion > 0 OR i.actual > 0) ORDER BY h.nombre
+    """, (kid,)).fetchall()
+    eventos = c.execute("""
+        SELECT e.*, emp.nombre AS responsable,
+               (SELECT COUNT(*) FROM caja_evento_items x
+                 WHERE x.evento_id = e.id AND x.cantidad_real < x.cantidad_esperada) AS con_faltantes
+        FROM caja_eventos e LEFT JOIN empleados emp ON emp.id = e.empleado_id
+        WHERE e.caja_id = ? ORDER BY e.id DESC LIMIT 30
+    """, (kid,)).fetchall()
+    return render_template("caja.html", k=k, items=items, eventos=eventos,
+                           estado=estado_caja(c, kid))
+
+
+@app.route("/cajas/<int:kid>/transferir", methods=["POST"])
+def caja_transferir(kid):
+    """Todas las operaciones de contenido de la caja, en una transaccion:
+    agregar (desde stock o alta), reponer faltante, pasar a stock, dar de baja."""
+    c = db()
+    accion = request.form["accion"]
+    hid = request.form.get("herramienta_id", type=int)
+    cant = request.form.get("cantidad", type=int) or 0
+    if not hid or cant < 1:
+        flash("Elegí la herramienta y una cantidad válida.", "error")
+        return redirect(url_for("caja", kid=kid))
+
+    hta = c.execute("SELECT * FROM herramientas WHERE id = ?", (hid,)).fetchone()
+    item = c.execute("SELECT * FROM caja_items WHERE caja_id = ? AND herramienta_id = ?",
+                     (kid, hid)).fetchone()
+    hoy = date.today().isoformat()
+
+    def asegurar_item():
+        if item is None:
+            c.execute("""INSERT INTO caja_items (caja_id, herramienta_id, dotacion, actual)
+                         VALUES (?,?,0,0)""", (kid, hid))
+
+    error = None
+    if accion in ("agregar_stock", "reponer"):
+        # sale del stock fisico del panol
+        pend = c.execute(f"SELECT pendiente FROM ({SALDO_HTA}) WHERE herramienta_id=?",
+                         (hid,)).fetchone()
+        disponible = hta["cantidad"] - (pend["pendiente"] if pend else 0)
+        if cant > disponible:
+            error = f"En el pañol hay {max(disponible,0)} disponible(s) de [{hta['codigo']}] {hta['nombre']}."
+    if accion == "reponer" and not error:
+        faltante = (item["dotacion"] - item["actual"]) if item else 0
+        if cant > faltante:
+            error = f"El faltante de esa herramienta es {max(faltante,0)}."
+    if accion == "a_stock" and (not item or cant > item["actual"]):
+        error = "La caja no tiene esa cantidad para pasar al stock."
+    if accion == "baja" and (not item or cant > item["actual"]):
+        error = "La caja no tiene esa cantidad para dar de baja."
+
+    if error:
+        flash(error, "error")
+        return redirect(url_for("caja", kid=kid))
+
+    asegurar_item()
+    if accion == "agregar_stock":
+        c.execute("UPDATE herramientas SET cantidad = cantidad - ? WHERE id = ?", (cant, hid))
+        c.execute("""UPDATE caja_items SET dotacion = dotacion + ?, actual = actual + ?
+                     WHERE caja_id = ? AND herramienta_id = ?""", (cant, cant, kid, hid))
+        direccion, msj = "DESDE_STOCK", "Agregada a la caja desde el stock del pañol."
+    elif accion == "agregar_alta":
+        c.execute("""UPDATE caja_items SET dotacion = dotacion + ?, actual = actual + ?
+                     WHERE caja_id = ? AND herramienta_id = ?""", (cant, cant, kid, hid))
+        direccion, msj = "ALTA", "Agregada a la caja (sin tocar el stock del pañol)."
+    elif accion == "reponer":
+        c.execute("UPDATE herramientas SET cantidad = cantidad - ? WHERE id = ?", (cant, hid))
+        c.execute("""UPDATE caja_items SET actual = actual + ?
+                     WHERE caja_id = ? AND herramienta_id = ?""", (cant, kid, hid))
+        direccion, msj = "DESDE_STOCK", "Faltante repuesto desde el stock del pañol."
+    elif accion == "a_stock":
+        c.execute("UPDATE herramientas SET cantidad = cantidad + ? WHERE id = ?", (cant, hid))
+        c.execute("""UPDATE caja_items SET dotacion = MAX(dotacion - ?, 0), actual = actual - ?
+                     WHERE caja_id = ? AND herramienta_id = ?""", (cant, cant, kid, hid))
+        direccion, msj = "A_STOCK", "Pasada de la caja al stock del pañol."
+    else:  # baja
+        c.execute("""UPDATE caja_items SET dotacion = MAX(dotacion - ?, 0), actual = actual - ?
+                     WHERE caja_id = ? AND herramienta_id = ?""", (cant, cant, kid, hid))
+        direccion, msj = "BAJA", "Dada de baja de la caja."
+    c.execute("""INSERT INTO transferencias (fecha, caja_id, herramienta_id, cantidad, direccion, observacion)
+                 VALUES (?,?,?,?,?,?)""",
+              (hoy, kid, hid, cant, direccion, request.form.get("observacion", "").strip() or None))
+    c.commit()
+    flash(f"{msj} ({cant} × [{hta['codigo']}] {hta['nombre']})", "ok")
+    return redirect(url_for("caja", kid=kid))
+
+
+@app.route("/cajas/<int:kid>/evento/<tipo>", methods=["GET", "POST"])
+def caja_evento(kid, tipo):
+    tipo = tipo.upper()
+    if tipo not in ("ENVIO", "RETORNO"):
+        return redirect(url_for("caja", kid=kid))
+    c = db()
+    k = c.execute("SELECT * FROM cajas WHERE id = ?", (kid,)).fetchone()
+    if not k:
+        return redirect(url_for("cajas"))
+    items = c.execute("""
+        SELECT i.*, h.codigo, h.nombre FROM caja_items i
+        JOIN herramientas h ON h.id = i.herramienta_id
+        WHERE i.caja_id = ? AND (i.dotacion > 0 OR i.actual > 0) ORDER BY h.nombre
+    """, (kid,)).fetchall()
+
+    if request.method == "POST":
+        if not items:
+            flash("La caja no tiene dotación cargada.", "error")
+            return redirect(url_for("caja", kid=kid))
+        fecha = request.form.get("fecha") or date.today().isoformat()
+        cur = c.execute("""INSERT INTO caja_eventos (caja_id, tipo, fecha, empleado_id, destino, observacion)
+                           VALUES (?,?,?,?,?,?)""",
+                        (kid, tipo, fecha, request.form.get("empleado_id", type=int) or None,
+                         request.form.get("destino", "").strip() or None,
+                         request.form.get("observacion", "").strip() or None))
+        evento_id = cur.lastrowid
+        faltantes = 0
+        for i in items:
+            esperada = i["dotacion"] if tipo == "ENVIO" else \
+                c.execute("""SELECT cantidad_real FROM caja_evento_items x
+                             JOIN caja_eventos e ON e.id = x.evento_id
+                             WHERE e.caja_id=? AND e.tipo='ENVIO' AND x.herramienta_id=?
+                             ORDER BY e.id DESC LIMIT 1""", (kid, i["herramienta_id"])).fetchone()
+            if tipo == "RETORNO":
+                esperada = esperada["cantidad_real"] if esperada else i["dotacion"]
+            real = request.form.get(f"real_{i['herramienta_id']}", type=int)
+            real = i["dotacion" if tipo == "ENVIO" else "actual"] if real is None else max(real, 0)
+            cond = request.form.get(f"cond_{i['herramienta_id']}", type=int) if tipo == "RETORNO" else None
+            obs = request.form.get(f"obs_{i['herramienta_id']}", "").strip() or None
+            c.execute("""INSERT INTO caja_evento_items
+                         (evento_id, herramienta_id, cantidad_esperada, cantidad_real, condicion_id, observacion)
+                         VALUES (?,?,?,?,?,?)""",
+                      (evento_id, i["herramienta_id"], esperada, real, cond, obs))
+            if real < esperada:
+                faltantes += esperada - real
+            if tipo == "RETORNO":
+                # lo que la caja tiene ahora es lo que volvio
+                c.execute("""UPDATE caja_items SET actual = ?
+                             WHERE caja_id = ? AND herramienta_id = ?""",
+                          (real, kid, i["herramienta_id"]))
+        c.commit()
+        verbo = "Envío" if tipo == "ENVIO" else "Retorno"
+        if faltantes:
+            flash(f"{verbo} registrado con {faltantes} faltante(s). "
+                  "Los faltantes quedan marcados en la dotación de la caja.", "error")
+        else:
+            flash(f"{verbo} registrado: la caja está completa. ✔", "ok")
+        return redirect(url_for("caja", kid=kid))
+
+    # esperado en el retorno: lo que salio en el ultimo envio (si existe)
+    esperados = {}
+    if tipo == "RETORNO":
+        for i in items:
+            r = c.execute("""SELECT x.cantidad_real FROM caja_evento_items x
+                             JOIN caja_eventos e ON e.id = x.evento_id
+                             WHERE e.caja_id=? AND e.tipo='ENVIO' AND x.herramienta_id=?
+                             ORDER BY e.id DESC LIMIT 1""", (kid, i["herramienta_id"])).fetchone()
+            esperados[i["herramienta_id"]] = r["cantidad_real"] if r else i["dotacion"]
+    condiciones = c.execute("SELECT * FROM condiciones ORDER BY nombre").fetchall()
+    empleados_l = c.execute("SELECT * FROM empleados WHERE activo=1 ORDER BY nombre").fetchall()
+    return render_template("caja_evento.html", k=k, tipo=tipo, items=items,
+                           esperados=esperados, condiciones=condiciones,
+                           empleados=empleados_l, fecha=date.today().isoformat())
+
+
+@app.route("/herramientas/<int:hid>/editar", methods=["GET", "POST"])
+def herramienta_editar(hid):
+    c = db()
+    h = c.execute("SELECT * FROM herramientas WHERE id = ?", (hid,)).fetchone()
+    if not h:
+        return redirect(url_for("herramientas"))
+    if request.method == "POST":
+        try:
+            c.execute("""UPDATE herramientas SET codigo=?, nombre=?, detalle=?, cantidad=?,
+                         modulo=?, estante=?, ubicacion=?, activo=? WHERE id=?""",
+                      (request.form["codigo"].strip(), request.form["nombre"].strip(),
+                       request.form.get("detalle", "").strip() or None,
+                       request.form.get("cantidad", type=int) or 0,
+                       request.form.get("modulo", "").strip() or None,
+                       request.form.get("estante", "").strip() or None,
+                       request.form.get("ubicacion", "").strip() or None,
+                       1 if request.form.get("activo") else 0, hid))
+            c.commit()
+            flash("Herramienta actualizada.", "ok")
+            return redirect(url_for("herramienta", hid=hid))
+        except sqlite3.IntegrityError:
+            flash("Ya existe otra herramienta con ese código.", "error")
+    return render_template("herramienta_editar.html", h=h)
 
 
 # ---------------------------------------------------------------- maestros

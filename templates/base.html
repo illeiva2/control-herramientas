@@ -13,6 +13,7 @@
     <a href="{{ url_for('index') }}" {% if request.path == '/' %}class="on"{% endif %}>Inicio</a>
     <a href="{{ url_for('registrar') }}" {% if request.path.startswith('/registrar') %}class="on"{% endif %}>Registrar</a>
     <a href="{{ url_for('herramientas') }}" {% if request.path.startswith('/herramientas') %}class="on"{% endif %}>Herramientas</a>
+    <a href="{{ url_for('cajas') }}" {% if request.path.startswith('/cajas') %}class="on"{% endif %}>Cajas</a>
     <a href="{{ url_for('empleados') }}" {% if request.path.startswith('/empleados') %}class="on"{% endif %}>Trabajadores</a>
     <a href="{{ url_for('movimientos') }}" {% if request.path.startswith('/movimientos') %}class="on"{% endif %}>Historial</a>
     <a href="{{ url_for('maestros') }}" {% if request.path.startswith('/maestros') %}class="on"{% endif %}>Maestros</a>

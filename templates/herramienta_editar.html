@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Editar [{{ h.codigo }}] — Pañol{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('herramienta', hid=h.id) }}">← [{{ h.codigo }}] {{ h.nombre }}</a></p>
+<h1>Editar herramienta</h1>
+
+<form method="post" class="form-registro">
+  <div class="grid">
+    <div class="campo chico"><label>Código</label><input name="codigo" value="{{ h.codigo }}" required></div>
+    <div class="campo ancho"><label>Nombre</label><input name="nombre" value="{{ h.nombre }}" required></div>
+    <div class="campo chico"><label>Cantidad <small>(stock pañol)</small></label>
+      <input type="number" name="cantidad" value="{{ h.cantidad }}" min="0"></div>
+    <div class="campo chico"><label>Módulo</label><input name="modulo" value="{{ h.modulo or '' }}" placeholder="1-7 / PARED"></div>
+    <div class="campo chico"><label>Estante</label><input name="estante" value="{{ h.estante or '' }}" placeholder="A / B / P"></div>
+    <div class="campo ancho"><label>Ubicación <small>(texto que se muestra)</small></label>
+      <input name="ubicacion" value="{{ h.ubicacion or '' }}" placeholder="Ej.: Góndola 3 - Estante A"></div>
+    <div class="campo ancho"><label>Detalle</label><input name="detalle" value="{{ h.detalle or '' }}"></div>
+    <div class="campo">
+      <label>&nbsp;</label>
+      <label class="forzar"><input type="checkbox" name="activo" {% if h.activo %}checked{% endif %}> Activa</label>
+    </div>
+  </div>
+  <div class="pie-form">
+    <span class="nota">Desmarcar «Activa» la oculta del catálogo y las búsquedas sin borrar su historial.</span>
+    <button class="btn grande">Guardar cambios</button>
+  </div>
+</form>
+{% endblock %}

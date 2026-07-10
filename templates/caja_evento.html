@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Envío' if tipo == 'ENVIO' else 'Retorno' }} de {{ k.nombre }} — Pañol{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('caja', kid=k.id) }}">← {{ k.nombre }}</a></p>
+<h1>{{ '➜ Enviar' if tipo == 'ENVIO' else '⮐ Recibir' }} {{ k.nombre }}</h1>
+<p class="nota">
+  {% if tipo == 'ENVIO' %}
+    Revisá el contenido antes de que salga: marcá cuántas unidades van de cada herramienta.
+  {% else %}
+    Revisá lo que volvió: cantidad y condición de cada herramienta. Lo que falte queda marcado en la caja.
+  {% endif %}
+</p>
+
+<form method="post" class="form-registro">
+  <div class="grid">
+    <div class="campo">
+      <label>Fecha</label>
+      <input type="date" name="fecha" value="{{ fecha }}" required>
+    </div>
+    <div class="campo ancho">
+      <label>Responsable <small>(quién {{ 'la lleva' if tipo == 'ENVIO' else 'la trae' }})</small></label>
+      <select name="empleado_id">
+        <option value="">—</option>
+        {% for e in empleados %}<option value="{{ e.id }}">{{ e.nombre }}</option>{% endfor %}
+      </select>
+    </div>
+    {% if tipo == 'ENVIO' %}
+    <div class="campo ancho">
+      <label>Destino</label>
+      <input type="text" name="destino" placeholder="Ej.: Campo San José" maxlength="100">
+    </div>
+    {% endif %}
+    <div class="campo ancho">
+      <label>Observación <small>(opcional)</small></label>
+      <input type="text" name="observacion" maxlength="200">
+    </div>
+  </div>
+
+  <table style="margin-top:14px">
+    <thead>
+      <tr><th>Código</th><th>Herramienta</th>
+          <th class="der">{{ 'Debe llevar' if tipo == 'ENVIO' else 'Salió con' }}</th>
+          <th class="der">{{ 'Va con' if tipo == 'ENVIO' else 'Volvió' }}</th>
+          {% if tipo == 'RETORNO' %}<th>Condición</th>{% endif %}
+          <th>Observación</th></tr>
+    </thead>
+    <tbody>
+    {% for i in items %}
+      {% set esp = esperados.get(i.herramienta_id, i.dotacion) if tipo == 'RETORNO' else i.dotacion %}
+      <tr>
+        <td>{{ i.codigo }}</td>
+        <td>{{ i.nombre }}</td>
+        <td class="der">{{ esp }}</td>
+        <td class="der">
+          <input class="input-mini" type="number" name="real_{{ i.herramienta_id }}"
+                 value="{{ i.actual if tipo == 'ENVIO' else esp }}" min="0" data-esperada="{{ esp }}">
+        </td>
+        {% if tipo == 'RETORNO' %}
+        <td>
+          <select name="cond_{{ i.herramienta_id }}">
+            {% for c in condiciones %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
+          </select>
+        </td>
+        {% endif %}
+        <td><input type="text" name="obs_{{ i.herramienta_id }}" maxlength="120" placeholder="—"></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="pie-form">
+    <span class="nota" id="resumen-checklist"></span>
+    <button type="submit" class="btn grande">Registrar {{ 'envío' if tipo == 'ENVIO' else 'retorno' }}</button>
+  </div>
+</form>
+
+<script>
+// resumen en vivo de faltantes mientras se completa el checklist
+document.addEventListener("DOMContentLoaded", () => {
+  const inputs = [...document.querySelectorAll("input[data-esperada]")];
+  const resumen = document.getElementById("resumen-checklist");
+  function actualizar() {
+    let faltan = 0;
+    inputs.forEach((i) => {
+      const dif = parseInt(i.dataset.esperada, 10) - (parseInt(i.value, 10) || 0);
+      i.style.background = dif > 0 ? "#fee2e2" : "";
+      if (dif > 0) faltan += dif;
+    });
+    resumen.textContent = faltan > 0 ? `⚠ Faltan ${faltan} unidad(es)` : "✔ Completa";
+    resumen.style.color = faltan > 0 ? "#b91c1c" : "#15803d";
+  }
+  inputs.forEach((i) => i.addEventListener("input", actualizar));
+  actualizar();
+});
+</script>
+{% endblock %}

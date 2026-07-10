@@ -128,11 +128,24 @@ input:focus, select:focus { outline: 2px solid #7dd3fc; border-color: #0284c7; }
 .buscador { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
 .buscador input[type=search] { flex: 1; min-width: 220px; }
 
-.grupo-hdr td {
-  background: #e8eef5; color: #334155; font-weight: 700; font-size: 13px;
-  border-top: 2px solid #cbd5e1;
+/* catalogo de secciones colapsables */
+details.seccion {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+  margin-bottom: 8px; overflow: hidden;
 }
-.grupo-hdr .grupo-n { color: #64748b; font-weight: 400; }
+details.seccion summary {
+  cursor: pointer; padding: 12px 16px; font-weight: 700; font-size: 14px;
+  color: #334155; background: #eef2f7; user-select: none; list-style: none;
+}
+details.seccion summary::-webkit-details-marker { display: none; }
+details.seccion summary::before { content: "▸ "; color: #64748b; }
+details.seccion[open] summary::before { content: "▾ "; }
+details.seccion summary:hover { background: #e2eaf3; }
+details.seccion .grupo-n { color: #64748b; font-weight: 400; }
+details.seccion table { border-radius: 0; }
+
+.input-mini { width: 70px; text-align: right; }
+.acciones-item { display: flex; gap: 4px; flex-wrap: wrap; }
 .listado { list-style: none; padding: 0; margin: 6px 0 14px; }
 .listado li { padding: 6px 10px; background: #f8fafc; border-radius: 8px; margin-bottom: 4px;
               display: flex; justify-content: space-between; align-items: center; }

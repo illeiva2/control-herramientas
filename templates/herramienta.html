@@ -2,15 +2,22 @@
 {% block title %}[{{ h.codigo }}] {{ h.nombre }} — Pañol{% endblock %}
 {% block content %}
 <p><a href="{{ url_for('herramientas') }}">← Herramientas</a></p>
-<h1>[{{ h.codigo }}] {{ h.nombre }}</h1>
+<h1>[{{ h.codigo }}] {{ h.nombre }}
+  <a class="btn mini sec" href="{{ url_for('herramienta_editar', hid=h.id) }}">✎ Editar</a></h1>
 {% if h.detalle %}<p class="detalle">{{ h.detalle }}</p>{% endif %}
 
 <div class="cards">
-  <div class="card"><div class="num">{{ h.cantidad }}</div><div class="lbl">Inventario</div></div>
+  <div class="card"><div class="num">{{ h.cantidad }}</div><div class="lbl">Stock pañol</div></div>
   <div class="card"><div class="num">{{ h.pendiente }}</div><div class="lbl">Prestadas</div></div>
   <div class="card"><div class="num">{{ h.disponible }}</div><div class="lbl">Disponibles</div></div>
   <div class="card"><div class="num chico">{{ h.ubicacion or '—' }}</div><div class="lbl">Ubicación</div></div>
 </div>
+
+{% if en_cajas %}
+<p class="nota">📦 Además está en:
+  {% for ec in en_cajas %}<a href="{{ url_for('caja', kid=ec.id) }}">{{ ec.nombre }}</a> ×{{ ec.actual }}{{ " · " if not loop.last }}{% endfor %}
+</p>
+{% endif %}
 
 {% if quien %}
 <h2>Quién la tiene</h2>

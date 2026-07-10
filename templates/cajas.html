@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Cajas — Pañol{% endblock %}
+{% block content %}
+<h1>Cajas de herramientas</h1>
+<p class="nota">Cajas que se envían al campo con su propia dotación de herramientas.</p>
+
+{% if cajas %}
+<table>
+  <thead><tr><th>Caja</th><th>Estado</th><th class="der">Herramientas</th>
+             <th class="der">Faltantes</th><th></th></tr></thead>
+  <tbody>
+  {% for k in cajas %}
+    <tr>
+      <td><a href="{{ url_for('caja', kid=k.id) }}"><b>{{ k.nombre }}</b></a>
+          {% if k.descripcion %}<div class="detalle">{{ k.descripcion }}</div>{% endif %}</td>
+      <td><span class="tag {{ 'dev' if k.en_campo else 'ent' }}">{{ k.texto }}</span></td>
+      <td class="der">{{ k.actual }} / {{ k.dotacion }}</td>
+      <td class="der {% if k.faltantes > 0 %}rojo{% endif %}">{{ k.faltantes }}</td>
+      <td><a class="btn mini sec" href="{{ url_for('caja', kid=k.id) }}">Abrir</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="vacio">Todavía no hay cajas. Creá la primera acá abajo.</p>{% endif %}
+
+<section class="panel" style="margin-top:20px">
+  <h2>Nueva caja</h2>
+  <form method="post" class="grid">
+    <div class="campo ancho"><label>Nombre</label><input name="nombre" required placeholder="Ej.: Caja campo N°1"></div>
+    <div class="campo ancho"><label>Descripción <small>(opcional)</small></label><input name="descripcion"></div>
+    <div class="campo"><label>&nbsp;</label><button class="btn">Crear caja</button></div>
+  </form>
+</section>
+{% endblock %}

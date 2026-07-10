@@ -15,32 +15,35 @@
   <label class="forzar" title="Mostrar solo herramientas con unidades prestadas">
     <input type="checkbox" id="filtro-prestadas"> Solo prestadas
   </label>
+  <button type="button" class="btn mini sec" id="btn-expandir">Expandir todo</button>
 </div>
 <p class="nota"><span id="contador">{{ total }}</span> herramienta(s)</p>
 
-<table id="tabla-htas">
-  <thead>
-    <tr><th>Código</th><th>Herramienta</th>
-        <th class="der">Inventario</th><th class="der">Prestadas</th><th class="der">Disponibles</th></tr>
-  </thead>
-  {% for g in grupos %}
-  <tbody class="grupo" data-modulo="{{ g.modulo }}">
-    <tr class="grupo-hdr">
-      <td colspan="5">📍 {{ g.etiqueta }} <span class="grupo-n">({{ g["items"]|length }})</span></td>
-    </tr>
-    {% for h in g["items"] %}
-    <tr class="fila-hta" data-buscar="{{ (h.codigo ~ ' ' ~ h.nombre ~ ' ' ~ (h.detalle or ''))|lower }}"
-        data-prestadas="{{ 1 if h.pendiente > 0 else 0 }}">
-      <td>{{ h.codigo }}</td>
-      <td><a href="{{ url_for('herramienta', hid=h.id) }}">{{ h.nombre }}</a>
-          {% if h.detalle %}<div class="detalle">{{ h.detalle }}</div>{% endif %}</td>
-      <td class="der">{{ h.cantidad }}</td>
-      <td class="der {% if h.pendiente > 0 %}naranja{% endif %}">{{ h.pendiente }}</td>
-      <td class="der {% if h.disponible <= 0 %}rojo{% endif %}">{{ h.disponible }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-  {% endfor %}
-</table>
+<div id="catalogo">
+{% for g in grupos %}
+  <details class="grupo seccion" data-modulo="{{ g.modulo }}">
+    <summary>📍 {{ g.etiqueta }} <span class="grupo-n">({{ g["items"]|length }})</span></summary>
+    <table>
+      <thead>
+        <tr><th>Código</th><th>Herramienta</th>
+            <th class="der">Stock</th><th class="der">Prestadas</th><th class="der">Disponibles</th></tr>
+      </thead>
+      <tbody>
+      {% for h in g["items"] %}
+        <tr class="fila-hta" data-buscar="{{ (h.codigo ~ ' ' ~ h.nombre ~ ' ' ~ (h.detalle or ''))|lower }}"
+            data-prestadas="{{ 1 if h.pendiente > 0 else 0 }}">
+          <td>{{ h.codigo }}</td>
+          <td><a href="{{ url_for('herramienta', hid=h.id) }}">{{ h.nombre }}</a>
+              {% if h.detalle %}<div class="detalle">{{ h.detalle }}</div>{% endif %}</td>
+          <td class="der">{{ h.cantidad }}</td>
+          <td class="der {% if h.pendiente > 0 %}naranja{% endif %}">{{ h.pendiente }}</td>
+          <td class="der {% if h.disponible <= 0 %}rojo{% endif %}">{{ h.disponible }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+{% endfor %}
+</div>
 <p class="vacio" id="sin-resultados" hidden>Ninguna herramienta coincide con la búsqueda.</p>
 {% endblock %}

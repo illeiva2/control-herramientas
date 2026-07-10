@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}{{ k.nombre }} — Pañol{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('cajas') }}">← Cajas</a></p>
+<h1>📦 {{ k.nombre }}</h1>
+{% if k.descripcion %}<p class="nota">{{ k.descripcion }}</p>{% endif %}
+<p><span class="tag {{ 'dev' if estado.en_campo else 'ent' }}">{{ estado.texto }}</span></p>
+
+<div class="acciones">
+  {% if estado.en_campo %}
+    <a class="btn grande" href="{{ url_for('caja_evento', kid=k.id, tipo='retorno') }}">⮐ Registrar retorno</a>
+  {% else %}
+    <a class="btn grande" href="{{ url_for('caja_evento', kid=k.id, tipo='envio') }}">➜ Registrar envío</a>
+  {% endif %}
+</div>
+
+<h2>Dotación</h2>
+{% if items %}
+<table>
+  <thead><tr><th>Código</th><th>Herramienta</th><th class="der">Debe tener</th>
+             <th class="der">Tiene</th><th class="der">Faltan</th><th>Acciones</th></tr></thead>
+  <tbody>
+  {% for i in items %}
+    {% set faltan = i.dotacion - i.actual %}
+    <tr>
+      <td>{{ i.codigo }}</td>
+      <td><a href="{{ url_for('herramienta', hid=i.herramienta_id) }}">{{ i.nombre }}</a></td>
+      <td class="der">{{ i.dotacion }}</td>
+      <td class="der">{{ i.actual }}</td>
+      <td class="der {% if faltan > 0 %}rojo{% endif %}">{{ faltan if faltan > 0 else '' }}</td>
+      <td class="acciones-item">
+        {% if faltan > 0 %}
+        <form method="post" action="{{ url_for('caja_transferir', kid=k.id) }}" class="inline">
+          <input type="hidden" name="accion" value="reponer">
+          <input type="hidden" name="herramienta_id" value="{{ i.herramienta_id }}">
+          <input type="hidden" name="cantidad" value="{{ faltan }}">
+          <button class="btn mini" title="Cubrir el faltante sacando del stock del pañol (hay {{ i.stock_panol }})">⤵ Reponer del stock</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('caja_transferir', kid=k.id) }}" class="inline"
+              onsubmit="return confirm('¿Pasar 1 unidad de la caja al stock del pañol?')">
+          <input type="hidden" name="accion" value="a_stock">
+          <input type="hidden" name="herramienta_id" value="{{ i.herramienta_id }}">
+          <input type="hidden" name="cantidad" value="1">
+          <button class="btn mini sec" title="Sacar 1 de la caja y sumarla al stock del pañol">⤴ 1 al stock</button>
+        </form>
+        <form method="post" action="{{ url_for('caja_transferir', kid=k.id) }}" class="inline"
+              onsubmit="return confirm('¿Dar de baja 1 unidad de la caja (perdida o rota, sin pasar al stock)?')">
+          <input type="hidden" name="accion" value="baja">
+          <input type="hidden" name="herramienta_id" value="{{ i.herramienta_id }}">
+          <input type="hidden" name="cantidad" value="1">
+          <button class="btn mini peligro" title="Dar de baja 1 (perdida/rota)">✕</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="vacio">La caja está vacía: agregale herramientas acá abajo.</p>{% endif %}
+
+<section class="panel" style="margin-top:16px">
+  <h2>Agregar herramienta a la caja</h2>
+  <form method="post" action="{{ url_for('caja_transferir', kid=k.id) }}" class="grid" id="form-agregar-caja" autocomplete="off">
+    <div class="campo ancho">
+      <label>Herramienta <small>(código o nombre)</small></label>
+      <input type="text" id="herramienta-buscar" placeholder="Escribí para buscar…">
+      <input type="hidden" name="herramienta_id" id="herramienta_id">
+      <div class="sugerencias" id="herramienta-sug"></div>
+      <div class="info-hta" id="info-hta"></div>
+    </div>
+    <div class="campo chico">
+      <label>Cantidad</label>
+      <input type="number" name="cantidad" value="1" min="1">
+    </div>
+    <div class="campo ancho">
+      <label>Origen</label>
+      <select name="accion">
+        <option value="agregar_stock">Del stock del pañol (descuenta del estante)</option>
+        <option value="agregar_alta">Nueva / propia de la caja (no toca el stock)</option>
+      </select>
+    </div>
+    <div class="campo"><label>&nbsp;</label><button class="btn">Agregar</button></div>
+  </form>
+</section>
+
+<h2>Historial de envíos y retornos</h2>
+{% if eventos %}
+<table>
+  <thead><tr><th>Fecha</th><th>Tipo</th><th>Responsable</th><th>Destino</th><th>Resultado</th></tr></thead>
+  <tbody>
+  {% for e in eventos %}
+    <tr>
+      <td>{{ e.fecha }}</td>
+      <td><span class="tag {{ 'ent' if e.tipo == 'ENVIO' else 'dev' }}">{{ e.tipo }}</span></td>
+      <td>{{ e.responsable or '' }}</td>
+      <td>{{ e.destino or '' }}</td>
+      <td>{% if e.con_faltantes %}<span class="rojo">⚠ {{ e.con_faltantes }} herramienta(s) con faltante</span>
+          {% else %}<span style="color:#15803d">✔ Completa</span>{% endif %}
+          {% if e.observacion %}<div class="detalle">{{ e.observacion }}</div>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="vacio">Sin envíos registrados todavía.</p>{% endif %}
+{% endblock %}
