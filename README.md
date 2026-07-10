@@ -16,6 +16,23 @@ Python ni internet), compatible con **Windows 7 SP1 o superior, 32 y 64 bits**:
 El exe se compila con Python 3.8.10 x86 + PyInstaller 5.13.2 (últimas versiones
 compatibles con Win7) usando `build_exe.bat`.
 
+## Actualizaciones automáticas
+
+La app instalada chequea una vez por día (y al arrancar) el último release de
+`github.com/illeiva2/control-herramientas`. Si hay versión nueva muestra el
+botón verde **"⬆ Actualizar"** en la barra superior: un clic descarga, reemplaza
+los archivos (nunca `data/`) y reinicia el programa.
+
+Para publicar una versión nueva desde esta máquina:
+
+1. Hacer los cambios y commitearlos.
+2. Subir el número en `version.py` (ej. `1.2.0`).
+3. `python publicar_update.py` — compila, arma el ZIP **sin la base de datos**
+   y crea el release en GitHub.
+
+Si la PC no tiene internet ese día, no pasa nada: la app funciona normal y
+avisa cuando vuelva a tener conexión.
+
 ## Alternativa: correr desde el código (requiere Python 3.10+)
 
 1. Instalar **Python** desde https://www.python.org/downloads/
