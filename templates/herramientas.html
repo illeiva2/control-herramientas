@@ -19,17 +19,14 @@
 </div>
 <p class="nota"><span id="contador">{{ total }}</span> herramienta(s)</p>
 
-<div id="catalogo">
-{% for g in grupos %}
-  <details class="grupo seccion" data-modulo="{{ g.modulo }}">
-    <summary>📍 {{ g.etiqueta }} <span class="grupo-n">({{ g["items"]|length }})</span></summary>
+{% macro tabla(items) %}
     <table>
       <thead>
         <tr><th>Código</th><th>Herramienta</th>
             <th class="der">Stock</th><th class="der">Prestadas</th><th class="der">Disponibles</th></tr>
       </thead>
       <tbody>
-      {% for h in g["items"] %}
+      {% for h in items %}
         <tr class="fila-hta" data-buscar="{{ (h.codigo ~ ' ' ~ h.nombre ~ ' ' ~ (h.detalle or ''))|lower }}"
             data-prestadas="{{ 1 if h.pendiente > 0 else 0 }}">
           <td>{{ h.codigo }}</td>
@@ -42,6 +39,24 @@
       {% endfor %}
       </tbody>
     </table>
+{% endmacro %}
+
+<div id="catalogo">
+{% for g in grupos %}
+  <details class="gondola" data-modulo="{{ g.modulo }}">
+    <summary>🗄 {{ g.nombre }} <span class="grupo-n">({{ g.total }})</span></summary>
+    <div class="gondola-cuerpo">
+    {% for s in g.subgrupos %}
+      {% if s.etiqueta %}
+      <details class="seccion sub">
+        <summary>📍 {{ s.etiqueta }} <span class="grupo-n">({{ s["items"]|length }})</span></summary>
+        {{ tabla(s["items"]) }}
+      </details>
+      {% else %}
+      <div class="seccion sub sin-estante">{{ tabla(s["items"]) }}</div>
+      {% endif %}
+    {% endfor %}
+    </div>
   </details>
 {% endfor %}
 </div>

@@ -111,32 +111,38 @@ document.addEventListener("DOMContentLoaded", () => {
   const soloPrestadas = document.getElementById("filtro-prestadas");
   const contador = document.getElementById("contador");
   const btnExpandir = document.getElementById("btn-expandir");
-  const grupos = [...document.querySelectorAll("#catalogo .grupo")];
+  const gondolas = [...document.querySelectorAll("#catalogo .gondola")];
 
   function filtrar() {
     const q = normalizar(buscar.value.trim());
     const mod = selModulo.value;
     const filtrando = q || mod || soloPrestadas.checked;
     let visibles = 0;
-    grupos.forEach((g) => {
-      let enGrupo = 0;
+    gondolas.forEach((g) => {
       if (mod && g.dataset.modulo !== mod) {
         g.hidden = true;
         return;
       }
-      g.querySelectorAll(".fila-hta").forEach((tr) => {
-        const pasa = (!q || normalizar(tr.dataset.buscar).includes(q)) &&
-                     (!soloPrestadas.checked || tr.dataset.prestadas === "1");
-        tr.hidden = !pasa;
-        if (pasa) enGrupo++;
+      let enGondola = 0;
+      g.querySelectorAll(".seccion").forEach((s) => {
+        let enSeccion = 0;
+        s.querySelectorAll(".fila-hta").forEach((tr) => {
+          const pasa = (!q || normalizar(tr.dataset.buscar).includes(q)) &&
+                       (!soloPrestadas.checked || tr.dataset.prestadas === "1");
+          tr.hidden = !pasa;
+          if (pasa) enSeccion++;
+        });
+        const n = s.querySelector(".grupo-n");
+        if (n) n.textContent = `(${enSeccion})`;
+        s.hidden = enSeccion === 0;
+        if (s.tagName === "DETAILS") s.open = filtrando ? enSeccion > 0 : false;
+        enGondola += enSeccion;
       });
-      g.querySelector(".grupo-n").textContent = `(${enGrupo})`;
-      g.hidden = enGrupo === 0;
-      // al filtrar, abrir las secciones con resultados; sin filtro, colapsar
-      if (filtrando) g.open = enGrupo > 0;
-      visibles += enGrupo;
+      g.querySelector("summary .grupo-n").textContent = `(${enGondola})`;
+      g.hidden = enGondola === 0;
+      g.open = filtrando ? enGondola > 0 : false;
+      visibles += enGondola;
     });
-    if (!filtrando) grupos.forEach((g) => { g.open = false; });
     contador.textContent = visibles;
     document.getElementById("sin-resultados").hidden = visibles > 0;
   }
@@ -144,7 +150,11 @@ document.addEventListener("DOMContentLoaded", () => {
   let expandido = false;
   btnExpandir.addEventListener("click", () => {
     expandido = !expandido;
-    grupos.forEach((g) => { if (!g.hidden) g.open = expandido; });
+    gondolas.forEach((g) => {
+      if (g.hidden) return;
+      g.open = expandido;
+      g.querySelectorAll("details.seccion").forEach((s) => { if (!s.hidden) s.open = expandido; });
+    });
     btnExpandir.textContent = expandido ? "Colapsar todo" : "Expandir todo";
   });
 

@@ -180,20 +180,29 @@ def herramientas():
             clave_cod = (1, 0)
         return (clave_mod, str(e or "~"), clave_cod, h["codigo"])
 
+    def etiqueta_estante(est):
+        e = str(est or "").strip()
+        if e.upper() == "P":
+            return "Puntera"
+        if e in ("", "0", "None"):
+            return ""
+        return f"Estante {e}"
+
+    # dos niveles: gondola/modulo -> estantes
     grupos = []
     for h in sorted(rows, key=orden):
-        etiqueta = h["ubicacion"] or "Sin ubicación"
         mod = str(h["modulo"] or "")
-        if not grupos or grupos[-1]["etiqueta"] != etiqueta:
-            grupos.append({"etiqueta": etiqueta, "modulo": mod, "items": []})
-        grupos[-1]["items"].append(h)
+        if not grupos or grupos[-1]["modulo"] != mod:
+            grupos.append({"modulo": mod, "nombre": nombre_modulo(h["modulo"]),
+                           "subgrupos": [], "total": 0})
+        g = grupos[-1]
+        etq = etiqueta_estante(h["estante"])
+        if not g["subgrupos"] or g["subgrupos"][-1]["etiqueta"] != etq:
+            g["subgrupos"].append({"etiqueta": etq, "items": []})
+        g["subgrupos"][-1]["items"].append(h)
+        g["total"] += 1
 
-    modulos = []  # para el selector: [(valor, nombre)]
-    for g in grupos:
-        par = (g["modulo"], nombre_modulo(g["modulo"] or None))
-        if par not in modulos:
-            modulos.append(par)
-
+    modulos = [(g["modulo"], g["nombre"]) for g in grupos]
     return render_template("herramientas.html", grupos=grupos, modulos=modulos,
                            total=len(rows), q=request.args.get("q", "").strip())
 
