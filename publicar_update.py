@@ -56,6 +56,17 @@ def main():
     correr(["gh", "release", "create", tag, str(zip_path), "-R", REPO,
             "--title", f"Control de Herramientas {tag}",
             "--notes", f"Actualización {tag}. Se instala desde el aviso dentro de la app."])
+
+    # ademas del ZIP de update, publicar el Setup.exe para instalaciones nuevas
+    iscc = Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe")
+    if iscc.exists():
+        correr([str(iscc), "/Qp", f"/DMyAppVersion={VERSION}", "setup.iss"])
+        setup = BASE / "Output" / f"ControlHerramientas-Setup-{VERSION}.exe"
+        correr(["gh", "release", "upload", tag, str(setup), "-R", REPO])
+        print(f"Setup publicado: {setup.name}")
+    else:
+        print("AVISO: Inno Setup no está instalado; no se generó el Setup.exe.")
+
     print(f"\nListo: {tag} publicado. Las apps instaladas van a avisar solas.")
 
 

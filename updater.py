@@ -103,12 +103,19 @@ def aplicar():
     except Exception as e:
         return False, f"No se pudo descargar la actualización: {e}"
 
+    with _lock:
+        version_nueva = estado["ultima"] or ""
+    # si el programa se instalo con el Setup, mantener actualizado el numero
+    # de version que muestra "Agregar o quitar programas"
+    clave_arp = (r"HKCU\Software\Microsoft\Windows\CurrentVersion"
+                 r"\Uninstall\ControlHerramientas_is1")
     bat = tmp / "aplicar.bat"
     bat.write_text(f"""@echo off
 :espera
 timeout /t 2 /nobreak >nul
 tasklist /FI "IMAGENAME eq ControlHerramientas.exe" | find /I "ControlHerramientas.exe" >nul && goto espera
 robocopy "{nueva}" "{destino}" /MIR /XD data >nul
+reg query "{clave_arp}" >nul 2>nul && reg add "{clave_arp}" /v DisplayVersion /t REG_SZ /d "{version_nueva}" /f >nul
 start "" "{destino}\\ControlHerramientas.exe"
 """, encoding="ascii")
     subprocess.Popen(["cmd", "/c", str(bat)],
