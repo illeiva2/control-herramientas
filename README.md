@@ -4,17 +4,28 @@ Sistema local de préstamo de herramientas que reemplaza los Excel
 `CONTROL DE HERRAMIENTAS.xlsm` e `Inventario (1).xlsx`. Corre en una sola PC,
 sin internet, con base de datos SQLite en `data/panol.db`.
 
-## Instalación en la máquina destino (recomendada: ejecutable)
+## Instalación en la máquina destino (recomendada: Setup.exe)
 
-La carpeta **`instalador/`** contiene el programa ya compilado (no necesita
-Python ni internet), compatible con **Windows 7 SP1 o superior, 32 y 64 bits**:
+Descargar **`ControlHerramientas-Setup-x.y.z.exe`** del último
+[release en GitHub](https://github.com/illeiva2/control-herramientas/releases/latest)
+y hacer doble clic. Compatible con **Windows 7 SP1 o superior, 32 y 64 bits**;
+no necesita Python ni permisos de administrador.
 
-1. Copiar la carpeta `instalador` a la PC (pendrive, red).
-2. Doble clic en `INSTALAR.bat` (crea acceso directo, opcional inicio automático).
-3. Ver `LEEME.txt` para detalles y solución de problemas en Windows 7.
+- Instala en `%LOCALAPPDATA%\ControlHerramientas` y queda registrado en
+  **"Agregar o quitar programas"** con su desinstalador.
+- Opciones durante la instalación: acceso directo en el escritorio, inicio
+  automático con Windows, y el componente de Microsoft (marcar solo en Windows 7
+  si es la primera vez; requiere admin).
+- La base de datos se crea vacía en el primer arranque y **nunca** se pisa al
+  reinstalar. Al desinstalar, se conserva y además queda una copia en el
+  escritorio (`panol-respaldo.db`).
+- Para migrar datos existentes: copiar `panol.db` a
+  `%LOCALAPPDATA%\ControlHerramientas\data\` con el programa cerrado.
 
-El exe se compila con Python 3.8.10 x86 + PyInstaller 5.13.2 (últimas versiones
-compatibles con Win7) usando `build_exe.bat`.
+El Setup se genera con Inno Setup 6 (`setup.iss`); el exe se compila con
+Python 3.8.10 x86 + PyInstaller 5.13.2 (últimas versiones compatibles con
+Win7). `python publicar_update.py` hace todo junto. La carpeta `instalador/`
+con `INSTALAR.bat` es el método viejo y queda solo como alternativa.
 
 ## Actualizaciones automáticas
 
