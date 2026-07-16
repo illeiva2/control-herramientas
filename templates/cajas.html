@@ -1,29 +1,46 @@
 {% extends "base.html" %}
 {% block title %}Cajas — Pañol{% endblock %}
 {% block content %}
-<h1>Cajas de herramientas</h1>
-<p class="nota">Cajas que se envían al campo con su propia dotación de herramientas.</p>
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Campo</div>
+    <h1>Cajas de herramientas</h1>
+  </div>
+</div>
+<p class="nota" style="margin-top:-8px">Cajas que se envían al campo con su propia dotación de herramientas.</p>
 
 {% if cajas %}
+<div class="tabla-card" style="margin-bottom:20px">
 <table>
-  <thead><tr><th>Caja</th><th>Estado</th><th class="der">Herramientas</th>
-             <th class="der">Faltantes</th><th></th></tr></thead>
+  <thead><tr><th>Caja</th><th>Estado</th><th class="centro">Herramientas</th>
+             <th class="centro">Faltantes</th><th class="der"></th></tr></thead>
   <tbody>
   {% for k in cajas %}
     <tr>
       <td><a href="{{ url_for('caja', kid=k.id) }}"><b>{{ k.nombre }}</b></a>
           {% if k.descripcion %}<div class="detalle">{{ k.descripcion }}</div>{% endif %}</td>
-      <td><span class="tag {{ 'dev' if k.en_campo else 'ent' }}">{{ k.texto }}</span></td>
-      <td class="der">{{ k.actual }} / {{ k.dotacion }}</td>
-      <td class="der {% if k.faltantes > 0 %}rojo{% endif %}">{{ k.faltantes }}</td>
-      <td><a class="btn mini sec" href="{{ url_for('caja', kid=k.id) }}">Abrir</a></td>
+      <td><span class="{{ 'badge-info' if k.en_campo else 'badge-ok' }}">{{ k.texto }}</span></td>
+      <td class="centro num-cell">{{ k.actual }} / {{ k.dotacion }}</td>
+      <td class="centro">
+        {% if k.faltantes > 0 %}<span class="badge-bad">{{ k.faltantes }}</span>
+        {% else %}<span class="badge-ok">Completa</span>{% endif %}</td>
+      <td class="der"><div class="acciones-item">
+        <a class="btn mini sec" href="{{ url_for('caja', kid=k.id) }}">Abrir</a>
+        {% if k.vacia %}
+        <form method="post" action="{{ url_for('caja_eliminar', kid=k.id) }}" class="inline"
+              onsubmit="return confirm('¿Eliminar esta caja? Se borra también su historial de envíos/retornos. No se puede deshacer.')">
+          <button class="btn mini peligro">Eliminar</button>
+        </form>
+        {% endif %}
+      </div></td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}<p class="vacio">Todavía no hay cajas. Creá la primera acá abajo.</p>{% endif %}
 
-<section class="panel" style="margin-top:20px">
+<section class="panel">
   <h2>Nueva caja</h2>
   <form method="post" class="grid">
     <div class="campo ancho"><label>Nombre</label><input name="nombre" required placeholder="Ej.: Caja campo N°1"></div>

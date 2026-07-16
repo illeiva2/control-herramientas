@@ -2,52 +2,93 @@
 {% block title %}[{{ h.codigo }}] {{ h.nombre }} — Pañol{% endblock %}
 {% block content %}
 <p><a href="{{ url_for('herramientas') }}">← Herramientas</a></p>
-<h1>[{{ h.codigo }}] {{ h.nombre }}
-  <a class="btn mini sec" href="{{ url_for('herramienta_editar', hid=h.id) }}">✎ Editar</a></h1>
-{% if h.detalle %}<p class="detalle">{{ h.detalle }}</p>{% endif %}
+
+<div class="page-head">
+  <div>
+    <div class="eyebrow"><span class="code">{{ h.codigo }}</span></div>
+    <h1 style="margin-top:6px">{{ h.nombre }}</h1>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
+      {% if not h.activo %}<span class="badge-neutral">Dada de baja</span>
+      {% elif h.disponible <= 0 %}<span class="badge-bad">Sin disponibles</span>
+      {% elif h.pendiente > 0 %}<span class="badge-warn">Con unidades prestadas</span>
+      {% else %}<span class="badge-ok">Disponible</span>{% endif %}
+      {% if h.detalle %}<span class="nota">{{ h.detalle }}</span>{% endif %}
+    </div>
+  </div>
+  <a class="btn sec" href="{{ url_for('herramienta_editar', hid=h.id) }}">✎ Editar</a>
+</div>
 
 <div class="cards">
-  <div class="card"><div class="num">{{ h.cantidad }}</div><div class="lbl">Stock pañol</div></div>
-  <div class="card"><div class="num">{{ h.pendiente }}</div><div class="lbl">Prestadas</div></div>
-  <div class="card"><div class="num">{{ h.disponible }}</div><div class="lbl">Disponibles</div></div>
-  <div class="card"><div class="num chico">{{ h.ubicacion or '—' }}</div><div class="lbl">Ubicación</div></div>
+  <div class="card">
+    <div class="card-top"><span class="lbl">Stock pañol</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6l3-2 3 2V2"/><path d="M4 8h16v13H4z"/></svg></div>
+    <div class="num">{{ h.cantidad }}</div><div class="hint">unidades en el pañol</div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="lbl">Prestadas</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13M11 6l6 6-6 6"/></svg></div>
+    <div class="num acc">{{ h.pendiente }}</div><div class="hint">sin devolver</div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="lbl">Disponibles</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+    <div class="num {% if h.disponible <= 0 %}rojo{% endif %}">{{ h.disponible }}</div><div class="hint">para entregar</div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="lbl">Ubicación</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></div>
+    <div class="num chico">{{ h.ubicacion or '—' }}</div><div class="hint">en el pañol</div>
+  </div>
 </div>
 
 {% if en_cajas %}
-<p class="nota">📦 Además está en:
-  {% for ec in en_cajas %}<a href="{{ url_for('caja', kid=ec.id) }}">{{ ec.nombre }}</a> ×{{ ec.actual }}{{ " · " if not loop.last }}{% endfor %}
-</p>
+<div class="seccion-card" style="margin-bottom:16px">
+  <div class="sc-head"><h2>También está en cajas</h2></div>
+  <table>
+    <thead><tr><th>Caja</th><th class="centro">Cantidad</th></tr></thead>
+    <tbody>
+    {% for ec in en_cajas %}
+      <tr><td><a href="{{ url_for('caja', kid=ec.id) }}">{{ ec.nombre }}</a></td>
+          <td class="centro num-cell">{{ ec.actual }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endif %}
 
 {% if quien %}
-<h2>Quién la tiene</h2>
-<table>
-  <thead><tr><th>Trabajador</th><th class="der">Cantidad</th></tr></thead>
-  <tbody>
-  {% for w in quien %}
-    <tr><td><a href="{{ url_for('empleado', eid=w.id) }}">{{ w.nombre }}</a></td>
-        <td class="der">{{ w.pendiente }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="seccion-card" style="margin-bottom:16px">
+  <div class="sc-head"><h2>Quién la tiene</h2></div>
+  <table>
+    <thead><tr><th>Trabajador</th><th class="centro">Cantidad</th></tr></thead>
+    <tbody>
+    {% for w in quien %}
+      <tr><td><a href="{{ url_for('empleado', eid=w.id) }}">{{ w.nombre }}</a></td>
+          <td class="centro num-cell">{{ w.pendiente }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endif %}
 
-<h2>Historial</h2>
+<div class="seccion-card">
+  <div class="sc-head"><h2>Historial</h2></div>
 {% if historial %}
 <table>
-  <thead><tr><th>Fecha</th><th>Tipo</th><th>Trabajador</th><th class="der">Cant.</th><th>Condición</th><th>Almacenista</th></tr></thead>
+  <thead><tr><th>Fecha</th><th>Tipo</th><th>Trabajador</th><th class="centro">Cant.</th><th>Condición</th><th>Almacenista</th></tr></thead>
   <tbody>
   {% for m in historial %}
     <tr>
-      <td>{{ m.fecha }}</td>
+      <td class="num-cell nota">{{ m.fecha }}</td>
       <td><span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ m.tipo }}</span></td>
       <td>{{ m.empleado }}</td>
-      <td class="der">{{ m.cantidad }}</td>
+      <td class="centro num-cell">{{ m.cantidad }}</td>
       <td>{{ m.condicion or '' }}</td>
       <td>{{ m.almacenista or '' }}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
-{% else %}<p class="vacio">Sin movimientos registrados.</p>{% endif %}
+{% else %}<p class="vacio" style="margin:16px;border:none">Sin movimientos registrados.</p>{% endif %}
+</div>
 {% endblock %}

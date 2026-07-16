@@ -1,35 +1,72 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="cards">
-  <div class="card"><div class="num">{{ stats.herramientas }}</div><div class="lbl">Herramientas</div></div>
-  <div class="card"><div class="num">{{ stats.prestadas }}</div><div class="lbl">Unidades prestadas</div></div>
-  <div class="card"><div class="num">{{ stats.empleados }}</div><div class="lbl">Trabajadores</div></div>
-  <div class="card"><div class="num">{{ stats.mov_hoy }}</div><div class="lbl">Movimientos hoy</div></div>
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Panel del pañol</div>
+    <h1 id="hoy-titulo">Inicio</h1>
+  </div>
+  <script>
+  (function () {
+    var d = new Date();
+    var dias = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+    var meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+    var el = document.getElementById("hoy-titulo");
+    if (el) el.textContent = dias[d.getDay()] + " " + d.getDate() + " de " + meses[d.getMonth()];
+  })();
+  </script>
+  <div class="acciones" style="margin:0">
+    <a class="btn grande" href="{{ url_for('registrar', tipo='ENTREGA') }}">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13M11 6l6 6-6 6"/><path d="M20 5v14"/></svg>
+      Registrar entrega</a>
+    <a class="btn grande sec" href="{{ url_for('registrar', tipo='DEVOLUCION') }}">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H7M13 6l-6 6 6 6"/><path d="M4 5v14"/></svg>
+      Registrar devolución</a>
+  </div>
 </div>
 
-<div class="acciones">
-  <a class="btn grande" href="{{ url_for('registrar', tipo='ENTREGA') }}">➜ Registrar entrega</a>
-  <a class="btn grande sec" href="{{ url_for('registrar', tipo='DEVOLUCION') }}">⮐ Registrar devolución</a>
+<div class="cards">
+  <div class="card">
+    <div class="card-top"><span class="lbl">Herramientas</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5a3.5 3.5 0 0 0-4.7 4.4L3 16.7 6.3 20l6.8-6.8a3.5 3.5 0 0 0 4.4-4.7l-2.4 2.4-2.1-.6-.6-2.1z"/></svg></div>
+    <div class="num">{{ stats.herramientas }}</div><div class="hint">ítems en catálogo</div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="lbl">Prestadas</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13M11 6l6 6-6 6"/></svg></div>
+    <div class="num acc">{{ stats.prestadas }}</div><div class="hint">unidades en la calle</div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="lbl">Trabajadores</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/></svg></div>
+    <div class="num">{{ stats.empleados }}</div><div class="hint">con actividad</div>
+  </div>
+  <div class="card">
+    <div class="card-top"><span class="lbl">Movimientos hoy</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3 8"/><path d="M3 3.5V8h4.5"/></svg></div>
+    <div class="num">{{ stats.mov_hoy }}</div><div class="hint">entregas + devoluciones</div>
+  </div>
 </div>
 
 <div class="dos-col">
-  <section>
-    <h2>Pendientes de devolución</h2>
-    {% if atrasados %}
-      <p class="aviso-atraso">⚠ {{ atrasados }} sin devolver hace más de 1 día</p>
-    {% endif %}
+  <section class="seccion-card">
+    <div class="sc-head">
+      <h2>Pendientes de devolución</h2>
+      {% if atrasados %}<span class="badge-bad">{{ atrasados }} atrasadas</span>{% endif %}
+    </div>
     {% if pendientes %}
     <table>
-      <thead><tr><th>Trabajador</th><th>Herramienta</th><th class="der">Cant.</th><th>Desde</th></tr></thead>
+      <thead><tr><th>Trabajador</th><th>Herramienta</th><th class="centro">Cant.</th><th class="der">Estado</th></tr></thead>
       <tbody>
       {% for p in pendientes %}
         <tr>
-          <td><a href="{{ url_for('empleado', eid=p.empleado_id) }}">{{ p.empleado }}</a></td>
-          <td>[{{ p.codigo }}] {{ p.herramienta }}</td>
-          <td class="der {% if p.pendiente < 0 %}rojo{% endif %}">{{ p.pendiente }}</td>
-          <td>{% if p.dias is not none and p.dias > 1 and p.pendiente > 0 %}
-                <span class="tag atras">hace {{ p.dias }} días</span>
-              {% elif p.ult_entrega %}{{ p.ult_entrega }}{% endif %}</td>
+          <td style="font-weight:600"><a href="{{ url_for('empleado', eid=p.empleado_id) }}">{{ p.empleado }}</a></td>
+          <td><span class="code">{{ p.codigo }}</span><span style="display:block">{{ p.herramienta }}</span></td>
+          <td class="centro num-cell {% if p.pendiente < 0 %}rojo{% endif %}">{{ p.pendiente }}</td>
+          <td class="der">
+            {% if p.dias is not none and p.dias > 1 and p.pendiente > 0 %}
+              <span class="badge-bad">hace {{ p.dias }} días</span>
+            {% elif p.ult_entrega %}<span class="nota">{{ p.ult_entrega }}</span>{% endif %}
+          </td>
         </tr>
       {% endfor %}
       </tbody>
@@ -37,23 +74,27 @@
     {% else %}<p class="vacio">No hay herramientas sin devolver. 👌</p>{% endif %}
   </section>
 
-  <section>
-    <h2>Últimos movimientos</h2>
+  <section class="seccion-card">
+    <div class="sc-head"><h2>Últimos movimientos</h2></div>
     {% if ultimos %}
-    <table>
-      <thead><tr><th>Fecha</th><th>Tipo</th><th>Trabajador</th><th>Herramienta</th><th class="der">Cant.</th></tr></thead>
-      <tbody>
+    <div>
       {% for m in ultimos %}
-        <tr>
-          <td>{{ m.fecha }}</td>
-          <td><span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ m.tipo }}</span></td>
-          <td>{{ m.empleado }}</td>
-          <td>[{{ m.codigo }}] {{ m.herramienta }}</td>
-          <td class="der">{{ m.cantidad }}</td>
-        </tr>
+        <div class="feed-item">
+          <span class="mov-ico {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">
+            {% if m.tipo == 'ENTREGA' %}
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13M11 6l6 6-6 6"/></svg>
+            {% else %}
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H7M13 6l-6 6 6 6"/></svg>
+            {% endif %}
+          </span>
+          <div class="txt">
+            <div class="t1"><span class="code">{{ m.codigo }}</span> {{ m.herramienta }}</div>
+            <div class="t2">{{ m.empleado }} · {{ m.fecha }}</div>
+          </div>
+          <span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ m.tipo }} {{ m.cantidad }}</span>
+        </div>
       {% endfor %}
-      </tbody>
-    </table>
+    </div>
     {% else %}<p class="vacio">Todavía no hay movimientos.</p>{% endif %}
   </section>
 </div>

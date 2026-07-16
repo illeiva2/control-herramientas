@@ -1,17 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Trabajadores — Pañol{% endblock %}
 {% block content %}
-<h1>Trabajadores</h1>
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Personal</div>
+    <h1>Trabajadores</h1>
+  </div>
+</div>
+<div class="tabla-card">
 <table>
   <thead><tr><th>Nombre</th><th>DNI</th><th class="der">Herramientas pendientes</th></tr></thead>
   <tbody>
   {% for e in rows %}
     <tr>
-      <td><a href="{{ url_for('empleado', eid=e.id) }}">{{ e.nombre }}</a></td>
-      <td>{{ e.dni or '' }}</td>
-      <td class="der {% if e.pendientes > 0 %}naranja{% endif %}">{{ e.pendientes }}</td>
+      <td style="font-weight:600"><a href="{{ url_for('empleado', eid=e.id) }}">{{ e.nombre }}</a></td>
+      <td class="nota">{{ e.dni or '' }}</td>
+      <td class="der">
+        {% if e.pendientes > 0 %}<span class="badge-warn">{{ e.pendientes }} pendientes</span>
+        {% else %}<span class="badge-ok">Al día</span>{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}

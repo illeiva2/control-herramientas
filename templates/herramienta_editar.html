@@ -2,26 +2,40 @@
 {% block title %}Editar [{{ h.codigo }}] — Pañol{% endblock %}
 {% block content %}
 <p><a href="{{ url_for('herramienta', hid=h.id) }}">← [{{ h.codigo }}] {{ h.nombre }}</a></p>
-<h1>Editar herramienta</h1>
+<div class="eyebrow">Inventario</div>
+<h1 style="margin-top:6px">Editar herramienta</h1>
 
-<form method="post" class="form-registro">
-  <div class="grid">
-    <div class="campo chico"><label>Código</label><input name="codigo" value="{{ h.codigo }}" required></div>
-    <div class="campo ancho"><label>Nombre</label><input name="nombre" value="{{ h.nombre }}" required></div>
-    <div class="campo chico"><label>Cantidad <small>(stock pañol)</small></label>
-      <input type="number" name="cantidad" value="{{ h.cantidad }}" min="0"></div>
-    <div class="campo chico"><label>Módulo</label><input name="modulo" value="{{ h.modulo or '' }}" placeholder="1-7 / PARED"></div>
-    <div class="campo chico"><label>Estante</label><input name="estante" value="{{ h.estante or '' }}" placeholder="A / B / P"></div>
-    <div class="campo ancho"><label>Ubicación <small>(texto que se muestra)</small></label>
-      <input name="ubicacion" value="{{ h.ubicacion or '' }}" placeholder="Ej.: Góndola 3 - Estante A"></div>
-    <div class="campo ancho"><label>Detalle</label><input name="detalle" value="{{ h.detalle or '' }}"></div>
-    <div class="campo">
-      <label>&nbsp;</label>
-      <label class="forzar"><input type="checkbox" name="activo" {% if h.activo %}checked{% endif %}> Activa</label>
+<form method="post" class="panel" style="max-width:560px">
+  <div class="form-col">
+    <div class="campo"><label>Código</label><input name="codigo" value="{{ h.codigo }}" required></div>
+    <div class="campo"><label>Nombre</label><input name="nombre" value="{{ h.nombre }}" required></div>
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <div class="campo"><label>Góndola</label>
+        <select name="modulo">
+          <option value="">—</option>
+          {% if h.modulo and h.modulo not in gondolas|map(attribute='nombre')|list %}<option value="{{ h.modulo }}" selected>{{ h.modulo }} (actual)</option>{% endif %}
+          {% for g in gondolas %}<option value="{{ g.nombre }}" {% if h.modulo == g.nombre %}selected{% endif %}>{{ g.nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo"><label>Estante</label>
+        <select name="estante">
+          <option value="">—</option>
+          {% if h.estante and h.estante not in estantes|map(attribute='nombre')|list %}<option value="{{ h.estante }}" selected>{{ h.estante }} (actual)</option>{% endif %}
+          {% for e in estantes %}<option value="{{ e.nombre }}" {% if h.estante == e.nombre %}selected{% endif %}>{{ e.nombre }}</option>{% endfor %}
+        </select>
+      </div>
     </div>
+    <div class="campo"><label>Stock físico <small>(en el pañol)</small></label>
+      <input type="number" name="cantidad" value="{{ h.cantidad }}" min="0"></div>
+    <div class="campo"><label>Detalle <small>(opcional)</small></label>
+      <input name="detalle" value="{{ h.detalle or '' }}"></div>
+    <label class="forzar" style="border-top:1px solid #e5e1da; padding-top:14px; margin-top:4px">
+      <input type="checkbox" name="activo" {% if h.activo %}checked{% endif %}> Activa
+    </label>
+    <p class="nota" style="margin:0">Si la desmarcás, se oculta del catálogo y las búsquedas — no se borra el historial.</p>
   </div>
   <div class="pie-form">
-    <span class="nota">Desmarcar «Activa» la oculta del catálogo y las búsquedas sin borrar su historial.</span>
+    <a class="btn sec" href="{{ url_for('herramienta', hid=h.id) }}">Cancelar</a>
     <button class="btn grande">Guardar cambios</button>
   </div>
 </form>
