@@ -99,6 +99,34 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) { /* sin red o chequeo pendiente: no mostrar nada */ }
 });
 
+// ------- almacenista activo (selector del header, persistido local) -------
+document.addEventListener("DOMContentLoaded", () => {
+  const KEY = "panol-almacenista";
+  const hdr = document.getElementById("almacenista-activo");
+  const regSel = document.getElementById("almacenista_id");
+  const guardado = localStorage.getItem(KEY) || "";
+  const tiene = (sel, val) => sel && val && sel.querySelector('option[value="' + val + '"]');
+
+  // header: aplicar el guardado si existe; si no, queda el primero (nunca vacío)
+  if (tiene(hdr, guardado)) hdr.value = guardado;
+  const activo = hdr ? hdr.value : guardado;
+  // persistir el activo efectivo para que quede fijo entre páginas/reinicios
+  if (hdr && activo && activo !== guardado) localStorage.setItem(KEY, activo);
+
+  // en Registrar: usar el almacenista activo por defecto, salvo que la URL fije uno
+  if (regSel) {
+    const urlAlm = new URLSearchParams(location.search).get("almacenista_id");
+    if (!urlAlm && tiene(regSel, activo)) regSel.value = activo;
+  }
+
+  if (hdr) {
+    hdr.addEventListener("change", () => {
+      localStorage.setItem(KEY, hdr.value);
+      if (tiene(regSel, hdr.value)) regSel.value = hdr.value;
+    });
+  }
+});
+
 // ------- filtro en vivo de la pagina Herramientas -------
 function normalizar(t) {
   return t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -133,14 +161,14 @@ document.addEventListener("DOMContentLoaded", () => {
           if (pasa) enSeccion++;
         });
         const n = s.querySelector(".grupo-n");
-        if (n) n.textContent = `(${enSeccion})`;
+        if (n) n.textContent = `${enSeccion}`;
         s.hidden = enSeccion === 0;
         if (s.tagName === "DETAILS") s.open = filtrando ? enSeccion > 0 : false;
         enGondola += enSeccion;
       });
-      g.querySelector("summary .grupo-n").textContent = `(${enGondola})`;
+      const gn = g.querySelector(".g-titulo .grupo-n");
+      if (gn) gn.textContent = `${enGondola} ítems`;
       g.hidden = enGondola === 0;
-      g.open = filtrando ? enGondola > 0 : false;
       visibles += enGondola;
     });
     contador.textContent = visibles;
@@ -152,7 +180,6 @@ document.addEventListener("DOMContentLoaded", () => {
     expandido = !expandido;
     gondolas.forEach((g) => {
       if (g.hidden) return;
-      g.open = expandido;
       g.querySelectorAll("details.seccion").forEach((s) => { if (!s.hidden) s.open = expandido; });
     });
     btnExpandir.textContent = expandido ? "Colapsar todo" : "Expandir todo";
@@ -191,6 +218,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
+// ------- autocompletado del "volvió algo que no estaba" (retorno de caja) -------
+document.addEventListener("DOMContentLoaded", () => {
+  const input = document.getElementById("extra-buscar");
+  if (!input) return;
+  combobox({
+    input,
+    hidden: document.getElementById("extra_herramienta_id"),
+    panel: document.getElementById("extra-sug"),
+    url: "/api/herramientas",
+    render: (it) =>
+      `<div><b>[${it.codigo}]</b> ${it.nombre}</div>` +
+      `<div class="sub">${it.ubicacion || ""}</div>`,
+  });
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("form-registro");
   if (!form) return;
@@ -222,29 +264,58 @@ document.addEventListener("DOMContentLoaded", () => {
     caja.scrollIntoView({ block: "nearest" });
   }
 
+  const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])));
+
+  function lineaExcede(ln) {
+    if (ln.tipo === "ENTREGA") return ln.disp != null && ln.cantidad > ln.disp;
+    return ln.pend != null && ln.cantidad > ln.pend;
+  }
+
   function pintarLote() {
     const body = $("lote-body");
     body.innerHTML = "";
     lote.forEach((ln, i) => {
       const tr = document.createElement("tr");
+      tr.className = "lote-row";
       const esEnt = ln.tipo === "ENTREGA";
+      const sub = [];
+      if (!esEnt && ln.condicion) sub.push(esc(ln.condicion));
+      if (ln.observacion) sub.push(esc(ln.observacion));
+      const over = lineaExcede(ln)
+        ? `<span class="lote-over">⚠ Supera lo disponible (${esEnt ? ln.disp : ln.pend})</span>` : "";
       tr.innerHTML =
-        `<td><span class="tag ${esEnt ? "ent" : "dev"}">${ln.tipo}</span></td>` +
-        `<td>[${ln.codigo}] ${ln.nombre}</td>` +
-        `<td class="der">${ln.cantidad}</td>` +
-        `<td>${esEnt ? "" : (ln.condicion || "")}</td>` +
-        `<td>${ln.observacion || ""}</td>` +
-        `<td><button type="button" class="btn mini peligro" title="Quitar">✕</button></td>`;
-      tr.querySelector("button").addEventListener("click", () => {
-        lote.splice(i, 1);
-        pintarLote();
+        `<td><span class="tag ${esEnt ? "ent" : "dev"}">${esEnt ? "Entrega" : "Devol."}</span></td>` +
+        `<td><span class="code">${esc(ln.codigo)}</span>` +
+          `<span style="display:block">${esc(ln.nombre)}</span>` +
+          (sub.length ? `<span class="detalle">${sub.join(" · ")}</span>` : "") + over + `</td>` +
+        `<td><span class="stepper"><button type="button" data-a="dec">−</button>` +
+          `<span class="val">${ln.cantidad}</span><button type="button" data-a="inc">+</button></span></td>` +
+        `<td class="der"><button type="button" class="btn-icon" title="Quitar">` +
+          `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg></button></td>`;
+      tr.querySelector('[data-a=dec]').addEventListener("click", () => {
+        if (ln.cantidad > 1) { ln.cantidad--; pintarLote(); }
       });
+      tr.querySelector('[data-a=inc]').addEventListener("click", () => { ln.cantidad++; pintarLote(); });
+      tr.querySelector(".btn-icon").addEventListener("click", () => { lote.splice(i, 1); pintarLote(); });
       body.appendChild(tr);
     });
     $("tabla-lote").hidden = lote.length === 0;
     $("lote-vacio").hidden = lote.length > 0;
+    const cc = $("cart-count"); if (cc) cc.textContent = lote.length;
     btnRegistrar.disabled = lote.length === 0;
     btnRegistrar.textContent = `Registrar todo (${lote.length})`;
+    pintarResumen();
+  }
+
+  function pintarResumen() {
+    const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+    set("sum-worker", empHidden.value ? empInput.value : "—");
+    set("sum-ent", lote.filter((l) => l.tipo === "ENTREGA").length);
+    set("sum-dev", lote.filter((l) => l.tipo === "DEVOLUCION").length);
+    set("sum-units", lote.reduce((a, l) => a + l.cantidad, 0));
+    const over = $("sum-over");
+    if (over) over.hidden = !lote.some(lineaExcede);
   }
 
   function agregarLinea(tipo, hta, cant, condId, condNombre, obs) {
@@ -253,6 +324,8 @@ document.addEventListener("DOMContentLoaded", () => {
       cantidad: cant, condicion_id: tipo === "DEVOLUCION" ? condId : null,
       condicion: tipo === "DEVOLUCION" ? condNombre : null,
       observacion: obs || null,
+      disp: hta.disponible != null ? hta.disponible : null,
+      pend: hta.pendiente != null ? hta.pendiente : null,
     });
     pintarLote();
   }
@@ -280,7 +353,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function cargarPendientes() {
     const box = $("pendientes-emp"), chips = $("chips-pendientes");
     const eid = empHidden.value;
-    if (!eid) { box.hidden = true; return; }
+    if (!eid) { box.hidden = true; pintarResumen(); return; }
     const r = await fetch("/api/pendientes?empleado_id=" + eid);
     const data = await r.json();
     chips.innerHTML = "";
@@ -290,13 +363,22 @@ document.addEventListener("DOMContentLoaded", () => {
       b.className = "chip";
       b.textContent = `[${p.codigo}] ${p.nombre} × ${p.pendiente}`;
       b.addEventListener("click", () => {
-        agregarLinea("DEVOLUCION", p, p.pendiente,
-          parseInt(condSelect.value || form.dataset.condicionDefecto, 10),
-          condSelect.options[condSelect.selectedIndex]?.text, null);
+        // prellenar el formulario del paso 2 en modo devolucion; el usuario
+        // revisa condicion/observacion y toca "Agregar a la lista"
+        const radio = form.querySelector('input[name=tipo][value="DEVOLUCION"]');
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change"));
+        htaHidden.value = p.id;
+        htaInput.value = p.nombre;
+        mostrarInfoHta(p);   // fija htaElegida = p (trae el id de la herramienta)
+        infoHta.textContent = `Pendiente de devolver: ${p.pendiente}`;
+        cantidad.value = p.pendiente;
+        (condSelect || cantidad).focus();
       });
       chips.appendChild(b);
     });
     box.hidden = data.length === 0;
+    pintarResumen();
   }
 
   combobox({

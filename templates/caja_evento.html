@@ -2,12 +2,14 @@
 {% block title %}{{ 'Envío' if tipo == 'ENVIO' else 'Retorno' }} de {{ k.nombre }} — Pañol{% endblock %}
 {% block content %}
 <p><a href="{{ url_for('caja', kid=k.id) }}">← {{ k.nombre }}</a></p>
-<h1>{{ '➜ Enviar' if tipo == 'ENVIO' else '⮐ Recibir' }} {{ k.nombre }}</h1>
+<div class="eyebrow">{{ 'Envío al campo' if tipo == 'ENVIO' else 'Retorno del campo' }}</div>
+<h1 style="margin-top:6px">{{ '➜ Enviar' if tipo == 'ENVIO' else '⮐ Recibir' }} {{ k.nombre }}</h1>
 <p class="nota">
   {% if tipo == 'ENVIO' %}
     Revisá el contenido antes de que salga: marcá cuántas unidades van de cada herramienta.
   {% else %}
     Revisá lo que volvió: cantidad y condición de cada herramienta. Lo que falte queda marcado en la caja.
+    Si volvió algo que no estaba en la caja, sumalo más abajo.
   {% endif %}
 </p>
 
@@ -36,7 +38,8 @@
     </div>
   </div>
 
-  <table style="margin-top:14px">
+  <div class="tabla-card" style="margin-top:14px">
+  <table>
     <thead>
       <tr><th>Código</th><th>Herramienta</th>
           <th class="der">{{ 'Debe llevar' if tipo == 'ENVIO' else 'Salió con' }}</th>
@@ -67,6 +70,26 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
+
+  {% if tipo == 'RETORNO' %}
+  <div class="panel" style="margin-top:14px" id="retorno-extra" autocomplete="off">
+    <h2>¿Volvió algo que no estaba en la caja?</h2>
+    <p class="nota" style="margin:-4px 0 12px">Opcional. Sumás una herramienta que trajeron y no figuraba en la caja.</p>
+    <div class="grid">
+      <div class="campo ancho">
+        <label>Herramienta <small>(código o nombre)</small></label>
+        <input type="text" id="extra-buscar" placeholder="Escribí para buscar…">
+        <input type="hidden" name="extra_herramienta_id" id="extra_herramienta_id">
+        <div class="sugerencias" id="extra-sug"></div>
+      </div>
+      <div class="campo chico">
+        <label>Cantidad</label>
+        <input type="number" name="extra_cantidad" min="1" placeholder="—">
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="pie-form">
     <span class="nota" id="resumen-checklist"></span>
@@ -83,11 +106,11 @@ document.addEventListener("DOMContentLoaded", () => {
     let faltan = 0;
     inputs.forEach((i) => {
       const dif = parseInt(i.dataset.esperada, 10) - (parseInt(i.value, 10) || 0);
-      i.style.background = dif > 0 ? "#fee2e2" : "";
+      i.style.background = dif > 0 ? "#f7e2dd" : "";
       if (dif > 0) faltan += dif;
     });
     resumen.textContent = faltan > 0 ? `⚠ Faltan ${faltan} unidad(es)` : "✔ Completa";
-    resumen.style.color = faltan > 0 ? "#b91c1c" : "#15803d";
+    resumen.style.color = faltan > 0 ? "#b23a2d" : "#2f7d32";
   }
   inputs.forEach((i) => i.addEventListener("input", actualizar));
   actualizar();

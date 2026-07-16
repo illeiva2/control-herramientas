@@ -1,46 +1,88 @@
 import csv
 import io
-import sqlite3
+import os
 import sys
 from datetime import date
 from pathlib import Path
 
+from dotenv import load_dotenv
 from flask import (Flask, flash, g, jsonify, redirect, render_template,
                    request, url_for, Response)
+import psycopg
 
 import updater
 from version import VERSION
 
+load_dotenv()
+
 if getattr(sys, "frozen", False):
-    # empaquetado con PyInstaller: recursos junto al bundle, datos junto al exe
+    # empaquetado con PyInstaller: recursos junto al bundle
     RES = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
     BASE = Path(sys.executable).parent
 else:
     RES = BASE = Path(__file__).parent
 
-DB = BASE / "data" / "panol.db"
+DATABASE_URL = os.environ.get("DATABASE_URL")   # cadena de conexion de Supabase (.env)
 
 app = Flask(__name__,
             template_folder=str(RES / "templates"),
             static_folder=str(RES / "static"))
-app.secret_key = "panol-local"  # app local en una sola PC, sin exposicion externa
+app.secret_key = "panol-local"  # solo para flash messages; sin login
 
 
-def init_db():
-    """Crea la base vacia si no existe (instalacion nueva)."""
-    DB.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB)
-    con.executescript((RES / "schema.sql").read_text(encoding="utf-8"))
-    con.commit()
-    con.close()
+# ---------------------------------------------------------------- base (Supabase / Postgres)
+class _Row(dict):
+    """Fila que imita a sqlite3.Row: acceso por nombre y por posicion, y dict(row)."""
+    def __init__(self, cols, values):
+        super().__init__(zip(cols, values))
+        self._vals = list(values)
+
+    def __getitem__(self, k):
+        return self._vals[k] if isinstance(k, int) else super().__getitem__(k)
 
 
-init_db()
+def _row_factory(cursor):
+    cols = [c.name for c in cursor.description] if cursor.description else []
+    return lambda values: _Row(cols, values)
+
+
+class _Conn:
+    """Envuelve la conexion psycopg: traduce los placeholders ? -> %s para no
+    tener que reescribir el SQL existente, y expone execute/commit/rollback/close."""
+    def __init__(self, conn):
+        self._c = conn
+
+    def execute(self, sql, params=()):
+        return self._c.execute(sql.replace("?", "%s"), params)
+
+    def commit(self):
+        self._c.commit()
+
+    def rollback(self):
+        self._c.rollback()
+
+    def close(self):
+        self._c.close()
+
+
+def db():
+    if "db" not in g:
+        # prepare_threshold=None: evita prepared statements (necesario con el pooler
+        # de Supabase en modo transaccion / pgbouncer).
+        g.db = _Conn(psycopg.connect(DATABASE_URL, row_factory=_row_factory,
+                                     prepare_threshold=None))
+    return g.db
 
 
 @app.context_processor
-def inyectar_version():
-    return {"version_app": VERSION}
+def inyectar_globales():
+    try:
+        almacenistas_hdr = db().execute(
+            "SELECT id, nombre FROM almacenistas WHERE activo=1 ORDER BY nombre"
+        ).fetchall()
+    except psycopg.Error:
+        almacenistas_hdr = []
+    return {"version_app": VERSION, "almacenistas_hdr": almacenistas_hdr}
 
 
 @app.route("/api/update-estado")
@@ -52,14 +94,6 @@ def api_update_estado():
 def actualizar():
     ok, mensaje = updater.aplicar()
     return jsonify({"ok": ok, "mensaje": mensaje})
-
-
-def db():
-    if "db" not in g:
-        g.db = sqlite3.connect(DB)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
-    return g.db
 
 
 @app.teardown_appcontext
@@ -82,6 +116,20 @@ SALDO_EMP_HTA = """
            SUM(CASE WHEN tipo = 'ENTREGA' THEN cantidad ELSE -cantidad END) AS pendiente
     FROM movimientos GROUP BY empleado_id, herramienta_id
 """
+
+
+def ubicacion_texto(modulo, estante):
+    """Texto legible de ubicacion a partir de la gondola (modulo) + estante.
+    Mismo formato que el importador de Excel, para ser consistente con los datos ya cargados."""
+    m = (modulo or "").strip()
+    e = (estante or "").strip()
+    if m.upper() == "PARED":
+        return "Pared"
+    if e.upper() == "P":
+        return f"Puntera modulo {m}" if m else "Puntera"
+    if m and e:
+        return f"Gondola {m} - Estante {e}"
+    return m or e or None
 
 
 # ---------------------------------------------------------------- paginas
@@ -137,7 +185,7 @@ def index():
 @app.route("/registrar")
 def registrar():
     c = db()
-    condiciones = c.execute("SELECT * FROM condiciones ORDER BY nombre").fetchall()
+    condiciones = c.execute("SELECT * FROM condiciones WHERE activo=1 ORDER BY nombre").fetchall()
     almacenistas = c.execute("SELECT * FROM almacenistas WHERE activo=1 ORDER BY nombre").fetchall()
     empleado = None
     if request.args.get("empleado_id"):
@@ -358,7 +406,8 @@ def cajas():
                        request.form.get("descripcion", "").strip() or None))
             c.commit()
             flash("Caja creada. Ahora cargale su dotación de herramientas.", "ok")
-        except sqlite3.IntegrityError:
+        except psycopg.errors.UniqueViolation:
+            c.rollback()
             flash("Ya existe una caja con ese nombre.", "error")
         return redirect(url_for("cajas"))
     filas = c.execute("""
@@ -369,8 +418,31 @@ def cajas():
         FROM cajas k LEFT JOIN caja_items i ON i.caja_id = k.id
         WHERE k.activo = 1 GROUP BY k.id ORDER BY k.nombre
     """).fetchall()
-    lista = [dict(f, **estado_caja(c, f["id"])) for f in filas]
+    # una caja "vacía" (0/0 ahora) se puede eliminar, aunque tenga historial
+    lista = [dict(f, vacia=(f["dotacion"] == 0 and f["actual"] == 0), **estado_caja(c, f["id"]))
+             for f in filas]
     return render_template("cajas.html", cajas=lista)
+
+
+@app.route("/cajas/<int:kid>/eliminar", methods=["POST"])
+def caja_eliminar(kid):
+    c = db()
+    tiene = c.execute("SELECT 1 FROM caja_items WHERE caja_id=? AND (dotacion>0 OR actual>0) LIMIT 1",
+                      (kid,)).fetchone()
+    if tiene:
+        flash("No se puede eliminar: la caja todavía tiene herramientas. "
+              "Vaciala primero (devolver al stock o dar de baja).", "error")
+        return redirect(url_for("caja", kid=kid))
+    # borrar la caja y todo su historial asociado (envíos/retornos y transferencias)
+    c.execute("""DELETE FROM caja_evento_items
+                 WHERE evento_id IN (SELECT id FROM caja_eventos WHERE caja_id=?)""", (kid,))
+    c.execute("DELETE FROM caja_eventos WHERE caja_id=?", (kid,))
+    c.execute("DELETE FROM transferencias WHERE caja_id=?", (kid,))
+    c.execute("DELETE FROM caja_items WHERE caja_id=?", (kid,))
+    c.execute("DELETE FROM cajas WHERE id=?", (kid,))
+    c.commit()
+    flash("Caja eliminada.", "ok")
+    return redirect(url_for("cajas"))
 
 
 @app.route("/cajas/<int:kid>")
@@ -398,8 +470,12 @@ def caja(kid):
 @app.route("/cajas/<int:kid>/transferir", methods=["POST"])
 def caja_transferir(kid):
     """Todas las operaciones de contenido de la caja, en una transaccion:
-    agregar (desde stock o alta), reponer faltante, pasar a stock, dar de baja."""
+    agregar (desde stock o alta), reponer faltante, pasar a stock, dar de baja.
+    Solo se permite mientras la caja esta en el panol (no en el campo)."""
     c = db()
+    if estado_caja(c, kid)["en_campo"]:
+        flash("La caja está en el campo. Registrá el retorno para modificar su contenido.", "error")
+        return redirect(url_for("caja", kid=kid))
     accion = request.form["accion"]
     hid = request.form.get("herramienta_id", type=int)
     cant = request.form.get("cantidad", type=int) or 0
@@ -486,16 +562,20 @@ def caja_evento(kid, tipo):
     """, (kid,)).fetchall()
 
     if request.method == "POST":
-        if not items:
+        # herramienta "extra" que volvió y no estaba en la caja (solo retorno)
+        extra_hid = request.form.get("extra_herramienta_id", type=int) if tipo == "RETORNO" else None
+        extra_cant = request.form.get("extra_cantidad", type=int) if tipo == "RETORNO" else None
+        hay_extra = bool(extra_hid and extra_cant and extra_cant > 0)
+        if not items and not hay_extra:
             flash("La caja no tiene dotación cargada.", "error")
             return redirect(url_for("caja", kid=kid))
         fecha = request.form.get("fecha") or date.today().isoformat()
         cur = c.execute("""INSERT INTO caja_eventos (caja_id, tipo, fecha, empleado_id, destino, observacion)
-                           VALUES (?,?,?,?,?,?)""",
+                           VALUES (?,?,?,?,?,?) RETURNING id""",
                         (kid, tipo, fecha, request.form.get("empleado_id", type=int) or None,
                          request.form.get("destino", "").strip() or None,
                          request.form.get("observacion", "").strip() or None))
-        evento_id = cur.lastrowid
+        evento_id = cur.fetchone()["id"]
         faltantes = 0
         for i in items:
             esperada = i["dotacion"] if tipo == "ENVIO" else \
@@ -520,6 +600,28 @@ def caja_evento(kid, tipo):
                 c.execute("""UPDATE caja_items SET actual = ?
                              WHERE caja_id = ? AND herramienta_id = ?""",
                           (real, kid, i["herramienta_id"]))
+        # RETORNO: volvió algo que no estaba en la caja -> se suma al contenido
+        if hay_extra:
+            existe_hta = c.execute("SELECT 1 FROM herramientas WHERE id=?", (extra_hid,)).fetchone()
+            en_checklist = any(i["herramienta_id"] == extra_hid for i in items)
+            if not existe_hta:
+                flash("La herramienta que se cargó como «volvió» no existe.", "error")
+            elif en_checklist:
+                flash("Esa herramienta ya estaba en la lista de arriba; ajustá su cantidad ahí.", "error")
+            else:
+                ya = c.execute("SELECT 1 FROM caja_items WHERE caja_id=? AND herramienta_id=?",
+                               (kid, extra_hid)).fetchone()
+                if ya:   # ya figuraba (p.ej. había quedado en 0/0): se le suma
+                    c.execute("""UPDATE caja_items SET dotacion = dotacion + ?, actual = actual + ?
+                                 WHERE caja_id = ? AND herramienta_id = ?""",
+                              (extra_cant, extra_cant, kid, extra_hid))
+                else:
+                    c.execute("""INSERT INTO caja_items (caja_id, herramienta_id, dotacion, actual)
+                                 VALUES (?,?,?,?)""", (kid, extra_hid, extra_cant, extra_cant))
+                c.execute("""INSERT INTO caja_evento_items
+                             (evento_id, herramienta_id, cantidad_esperada, cantidad_real, condicion_id, observacion)
+                             VALUES (?,?,0,?,?,?)""",
+                          (evento_id, extra_hid, extra_cant, None, "Volvió sin haber salido"))
         c.commit()
         verbo = "Envío" if tipo == "ENVIO" else "Retorno"
         if faltantes:
@@ -538,7 +640,7 @@ def caja_evento(kid, tipo):
                              WHERE e.caja_id=? AND e.tipo='ENVIO' AND x.herramienta_id=?
                              ORDER BY e.id DESC LIMIT 1""", (kid, i["herramienta_id"])).fetchone()
             esperados[i["herramienta_id"]] = r["cantidad_real"] if r else i["dotacion"]
-    condiciones = c.execute("SELECT * FROM condiciones ORDER BY nombre").fetchall()
+    condiciones = c.execute("SELECT * FROM condiciones WHERE activo=1 ORDER BY nombre").fetchall()
     empleados_l = c.execute("SELECT * FROM empleados WHERE activo=1 ORDER BY nombre").fetchall()
     return render_template("caja_evento.html", k=k, tipo=tipo, items=items,
                            esperados=esperados, condiciones=condiciones,
@@ -552,22 +654,25 @@ def herramienta_editar(hid):
     if not h:
         return redirect(url_for("herramientas"))
     if request.method == "POST":
+        mod = request.form.get("modulo", "").strip() or None
+        est = request.form.get("estante", "").strip() or None
         try:
             c.execute("""UPDATE herramientas SET codigo=?, nombre=?, detalle=?, cantidad=?,
                          modulo=?, estante=?, ubicacion=?, activo=? WHERE id=?""",
                       (request.form["codigo"].strip(), request.form["nombre"].strip(),
                        request.form.get("detalle", "").strip() or None,
                        request.form.get("cantidad", type=int) or 0,
-                       request.form.get("modulo", "").strip() or None,
-                       request.form.get("estante", "").strip() or None,
-                       request.form.get("ubicacion", "").strip() or None,
+                       mod, est, ubicacion_texto(mod, est),
                        1 if request.form.get("activo") else 0, hid))
             c.commit()
             flash("Herramienta actualizada.", "ok")
             return redirect(url_for("herramienta", hid=hid))
-        except sqlite3.IntegrityError:
+        except psycopg.errors.UniqueViolation:
+            c.rollback()
             flash("Ya existe otra herramienta con ese código.", "error")
-    return render_template("herramienta_editar.html", h=h)
+    gondolas = c.execute("SELECT * FROM gondolas WHERE activo=1 ORDER BY nombre").fetchall()
+    estantes = c.execute("SELECT * FROM estantes WHERE activo=1 ORDER BY nombre").fetchall()
+    return render_template("herramienta_editar.html", h=h, gondolas=gondolas, estantes=estantes)
 
 
 # ---------------------------------------------------------------- maestros
@@ -577,46 +682,153 @@ def maestros():
     c = db()
     if request.method == "POST":
         que = request.form["que"]
+        rid = request.form.get("id", type=int)   # si viene, es edicion
         try:
             if que == "herramienta":
-                mod, est = request.form.get("modulo", "").strip(), request.form.get("estante", "").strip()
-                ubic = request.form.get("ubicacion", "").strip()
-                c.execute("""INSERT INTO herramientas (codigo, nombre, detalle, cantidad, modulo, estante, ubicacion)
-                             VALUES (?,?,?,?,?,?,?)""",
-                          (request.form["codigo"].strip(), request.form["nombre"].strip(),
-                           request.form.get("detalle", "").strip() or None,
-                           request.form.get("cantidad", type=int) or 0, mod or None, est or None,
-                           ubic or None))
-            elif que == "empleado":
-                c.execute("INSERT INTO empleados (dni, nombre) VALUES (?,?)",
-                          (request.form.get("dni", "").strip() or None, request.form["nombre"].strip()))
-            elif que == "almacenista":
-                c.execute("INSERT INTO almacenistas (dni, nombre) VALUES (?,?)",
-                          (request.form.get("dni", "").strip() or None, request.form["nombre"].strip()))
-            elif que == "condicion":
-                c.execute("INSERT INTO condiciones (nombre) VALUES (?)",
-                          (request.form["nombre"].strip(),))
+                codigo = request.form["codigo"].strip()
+                nombre = request.form["nombre"].strip()
+                detalle = request.form.get("detalle", "").strip() or None
+                cantidad = request.form.get("cantidad", type=int) or 0
+                mod = request.form.get("modulo", "").strip() or None
+                est = request.form.get("estante", "").strip() or None
+                ubic = ubicacion_texto(mod, est)   # se arma sola desde gondola + estante
+                if rid:
+                    c.execute("""UPDATE herramientas SET codigo=?, nombre=?, detalle=?, cantidad=?,
+                                 modulo=?, estante=?, ubicacion=? WHERE id=?""",
+                              (codigo, nombre, detalle, cantidad, mod, est, ubic, rid))
+                else:
+                    c.execute("""INSERT INTO herramientas (codigo, nombre, detalle, cantidad, modulo, estante, ubicacion)
+                                 VALUES (?,?,?,?,?,?,?)""",
+                              (codigo, nombre, detalle, cantidad, mod, est, ubic))
+            elif que in ("empleado", "almacenista"):
+                tabla = "empleados" if que == "empleado" else "almacenistas"
+                nombre = request.form["nombre"].strip()
+                dni = request.form.get("dni", "").strip() or None
+                if rid:
+                    c.execute(f"UPDATE {tabla} SET dni=?, nombre=? WHERE id=?", (dni, nombre, rid))
+                else:
+                    c.execute(f"INSERT INTO {tabla} (dni, nombre) VALUES (?,?)", (dni, nombre))
+            elif que in ("condicion", "gondola", "estante"):
+                tabla = {"condicion": "condiciones", "gondola": "gondolas", "estante": "estantes"}[que]
+                nombre = request.form["nombre"].strip()
+                if rid:
+                    c.execute(f"UPDATE {tabla} SET nombre=? WHERE id=?", (nombre, rid))
+                else:
+                    c.execute(f"INSERT INTO {tabla} (nombre) VALUES (?)", (nombre,))
             c.commit()
-            flash("Agregado correctamente.", "ok")
-        except sqlite3.IntegrityError:
+            flash("Actualizado correctamente." if rid else "Agregado correctamente.", "ok")
+        except psycopg.errors.UniqueViolation:
+            c.rollback()
             flash("Ya existe un registro con ese código/nombre.", "error")
-        return redirect(url_for("maestros"))
-    datos = {
-        "almacenistas": c.execute("SELECT * FROM almacenistas ORDER BY nombre").fetchall(),
-        "condiciones": c.execute("SELECT * FROM condiciones ORDER BY nombre").fetchall(),
+        tab_por_que = {"herramienta": "herramientas", "empleado": "trabajadores",
+                       "almacenista": "almacenistas", "condicion": "condiciones",
+                       "gondola": "gondolas", "estante": "estantes"}
+        return redirect(url_for("maestros", tab=tab_por_que.get(que, "herramientas")))
+    tab = request.args.get("tab", "herramientas")
+    if tab not in ("herramientas", "trabajadores", "almacenistas", "condiciones",
+                   "gondolas", "estantes"):
+        tab = "herramientas"
+    # registro a editar (edicion en el formulario de la izquierda)
+    editando = None
+    edit_id = request.args.get("editar", type=int)
+    tabla_de_tab = {"herramientas": "herramientas", "trabajadores": "empleados",
+                    "almacenistas": "almacenistas", "condiciones": "condiciones",
+                    "gondolas": "gondolas", "estantes": "estantes"}
+    if edit_id and tab in tabla_de_tab:
+        editando = c.execute(f"SELECT * FROM {tabla_de_tab[tab]} WHERE id=?", (edit_id,)).fetchone()
+    proximo_codigo = (c.execute(
+        "SELECT MAX(CASE WHEN codigo ~ '^[0-9]+$' THEN codigo::int END) FROM herramientas"
+    ).fetchone()[0] or 0) + 1
+    herramientas = c.execute("SELECT * FROM herramientas ORDER BY codigo").fetchall()
+    empleados = c.execute("SELECT * FROM empleados ORDER BY nombre").fetchall()
+    almacenistas = c.execute("SELECT * FROM almacenistas ORDER BY nombre").fetchall()
+    condiciones = c.execute("SELECT * FROM condiciones ORDER BY nombre").fetchall()
+    gondolas = c.execute("SELECT * FROM gondolas ORDER BY nombre").fetchall()
+    estantes = c.execute("SELECT * FROM estantes ORDER BY nombre").fetchall()
+
+    # ids/valores "en uso" -> esos NO se pueden eliminar definitivamente (solo dar de baja)
+    def _vals(*consultas):
+        s = set()
+        for q in consultas:
+            s.update(r[0] for r in c.execute(q).fetchall() if r[0] is not None)
+        return s
+    mods = _vals("SELECT modulo FROM herramientas")
+    ests = _vals("SELECT estante FROM herramientas")
+    usados = {
+        "herramientas": _vals("SELECT herramienta_id FROM movimientos",
+                              "SELECT herramienta_id FROM caja_items",
+                              "SELECT herramienta_id FROM caja_evento_items",
+                              "SELECT herramienta_id FROM transferencias"),
+        "empleados": _vals("SELECT empleado_id FROM movimientos",
+                           "SELECT empleado_id FROM caja_eventos"),
+        "almacenistas": _vals("SELECT almacenista_id FROM movimientos"),
+        "condiciones": _vals("SELECT condicion_id FROM movimientos",
+                             "SELECT condicion_id FROM caja_evento_items"),
+        "gondolas": {g["id"] for g in gondolas if g["nombre"] in mods},
+        "estantes": {e["id"] for e in estantes if e["nombre"] in ests},
     }
-    return render_template("maestros.html", **datos)
+    return render_template("maestros.html", tab=tab, editando=editando,
+                           proximo_codigo=proximo_codigo, herramientas=herramientas,
+                           empleados=empleados, almacenistas=almacenistas,
+                           condiciones=condiciones, gondolas=gondolas, estantes=estantes,
+                           usados=usados)
 
 
 @app.route("/maestros/baja", methods=["POST"])
 def maestros_baja():
     tabla = request.form["tabla"]
-    if tabla not in ("empleados", "almacenistas", "herramientas"):
+    if tabla not in ("empleados", "almacenistas", "herramientas", "gondolas", "estantes", "condiciones"):
         return redirect(url_for("maestros"))
     c = db()
     c.execute(f"UPDATE {tabla} SET activo = 1 - activo WHERE id = ?", (request.form["id"],))
     c.commit()
-    return redirect(request.referrer or url_for("maestros"))
+    tab_por_tabla = {"empleados": "trabajadores", "almacenistas": "almacenistas",
+                     "herramientas": "herramientas", "gondolas": "gondolas",
+                     "estantes": "estantes", "condiciones": "condiciones"}
+    return redirect(url_for("maestros", tab=tab_por_tabla.get(tabla, "herramientas")))
+
+
+def maestro_en_uso(c, tabla, rid):
+    """True si el registro tiene algo asociado (entonces NO se puede eliminar; solo dar de baja)."""
+    refs = {
+        "herramientas": [("movimientos", "herramienta_id"), ("caja_items", "herramienta_id"),
+                         ("caja_evento_items", "herramienta_id"), ("transferencias", "herramienta_id")],
+        "empleados": [("movimientos", "empleado_id"), ("caja_eventos", "empleado_id")],
+        "almacenistas": [("movimientos", "almacenista_id")],
+        "condiciones": [("movimientos", "condicion_id"), ("caja_evento_items", "condicion_id")],
+    }
+    if tabla in refs:
+        for t, col in refs[tabla]:
+            if c.execute(f"SELECT 1 FROM {t} WHERE {col}=? LIMIT 1", (rid,)).fetchone():
+                return True
+        return False
+    if tabla in ("gondolas", "estantes"):
+        col = "modulo" if tabla == "gondolas" else "estante"
+        row = c.execute(f"SELECT nombre FROM {tabla} WHERE id=?", (rid,)).fetchone()
+        if not row:
+            return False
+        return bool(c.execute(f"SELECT 1 FROM herramientas WHERE {col}=? LIMIT 1", (row[0],)).fetchone())
+    return True   # tabla desconocida: por las dudas, no permitir borrar
+
+
+@app.route("/maestros/eliminar", methods=["POST"])
+def maestros_eliminar():
+    tabla = request.form["tabla"]
+    if tabla not in ("empleados", "almacenistas", "herramientas", "gondolas", "estantes", "condiciones"):
+        return redirect(url_for("maestros"))
+    rid = request.form.get("id", type=int)
+    tab_por_tabla = {"empleados": "trabajadores", "almacenistas": "almacenistas",
+                     "herramientas": "herramientas", "gondolas": "gondolas",
+                     "estantes": "estantes", "condiciones": "condiciones"}
+    tab = tab_por_tabla.get(tabla, "herramientas")
+    c = db()
+    if maestro_en_uso(c, tabla, rid):
+        flash("No se puede eliminar: tiene datos asociados. Podés darlo de baja.", "error")
+    else:
+        c.execute(f"DELETE FROM {tabla} WHERE id=?", (rid,))
+        c.commit()
+        flash("Eliminado definitivamente.", "ok")
+    return redirect(url_for("maestros", tab=tab))
 
 
 @app.route("/api/registrar-lote", methods=["POST"])
@@ -696,7 +908,7 @@ def api_registrar_lote():
             """, (ln["tipo"], fecha, empleado_id, ln["herramienta_id"], ln["cantidad"],
                   ln["condicion_id"], almacenista_id, ln["observacion"]))
         c.commit()
-    except sqlite3.Error as e:
+    except psycopg.Error as e:
         c.rollback()
         return jsonify({"ok": False, "errores": [f"Error al guardar: {e}. No se registró nada."]})
 

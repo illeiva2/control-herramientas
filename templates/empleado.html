@@ -2,46 +2,57 @@
 {% block title %}{{ e.nombre }} — Pañol{% endblock %}
 {% block content %}
 <p><a href="{{ url_for('empleados') }}">← Trabajadores</a></p>
-<h1>{{ e.nombre }}</h1>
-{% if e.dni %}<p class="nota">DNI: {{ e.dni }}</p>{% endif %}
 
-<div class="acciones">
-  <a class="btn" href="{{ url_for('registrar', tipo='ENTREGA', empleado_id=e.id) }}">➜ Entregarle</a>
-  <a class="btn sec" href="{{ url_for('registrar', tipo='DEVOLUCION', empleado_id=e.id) }}">⮐ Recibir devolución</a>
+<div class="page-head">
+  <div style="display:flex;align-items:center;gap:13px">
+    <span class="avatar lg">{{ (e.nombre.split()|map('first')|join)[:2]|upper }}</span>
+    <div>
+      <h1 style="margin:0">{{ e.nombre }}</h1>
+      {% if e.dni %}<div class="nota">DNI {{ e.dni }}</div>{% endif %}
+    </div>
+  </div>
+  <div class="acciones" style="margin:0">
+    <a class="btn" href="{{ url_for('registrar', tipo='ENTREGA', empleado_id=e.id) }}">➜ Entregarle</a>
+    <a class="btn sec" href="{{ url_for('registrar', tipo='DEVOLUCION', empleado_id=e.id) }}">⮐ Recibir devolución</a>
+  </div>
 </div>
 
-<h2>Tiene pendiente</h2>
+<div class="seccion-card" style="margin-bottom:16px">
+  <div class="sc-head"><h2>Tiene pendiente</h2></div>
 {% if tiene %}
 <table>
-  <thead><tr><th>Código</th><th>Herramienta</th><th>Ubicación</th><th class="der">Cantidad</th></tr></thead>
+  <thead><tr><th>Código</th><th>Herramienta</th><th>Ubicación</th><th class="centro">Cantidad</th></tr></thead>
   <tbody>
   {% for t in tiene %}
     <tr>
-      <td>{{ t.codigo }}</td>
+      <td><span class="code">{{ t.codigo }}</span></td>
       <td><a href="{{ url_for('herramienta', hid=t.id) }}">{{ t.nombre }}</a></td>
-      <td>{{ t.ubicacion or '' }}</td>
-      <td class="der">{{ t.pendiente }}</td>
+      <td class="nota">{{ t.ubicacion or '' }}</td>
+      <td class="centro num-cell">{{ t.pendiente }}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
-{% else %}<p class="vacio">No tiene herramientas pendientes. 👌</p>{% endif %}
+{% else %}<p class="vacio" style="margin:16px;border:none">No tiene herramientas pendientes. 👌</p>{% endif %}
+</div>
 
-<h2>Historial</h2>
+<div class="seccion-card">
+  <div class="sc-head"><h2>Historial</h2></div>
 {% if historial %}
 <table>
-  <thead><tr><th>Fecha</th><th>Tipo</th><th>Herramienta</th><th class="der">Cant.</th><th>Condición</th></tr></thead>
+  <thead><tr><th>Fecha</th><th>Tipo</th><th>Herramienta</th><th class="centro">Cant.</th><th>Condición</th></tr></thead>
   <tbody>
   {% for m in historial %}
     <tr>
-      <td>{{ m.fecha }}</td>
+      <td class="num-cell nota">{{ m.fecha }}</td>
       <td><span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ m.tipo }}</span></td>
-      <td>[{{ m.codigo }}] {{ m.herramienta }}</td>
-      <td class="der">{{ m.cantidad }}</td>
+      <td><span class="code">{{ m.codigo }}</span> {{ m.herramienta }}</td>
+      <td class="centro num-cell">{{ m.cantidad }}</td>
       <td>{{ m.condicion or '' }}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
-{% else %}<p class="vacio">Sin movimientos registrados.</p>{% endif %}
+{% else %}<p class="vacio" style="margin:16px;border:none">Sin movimientos registrados.</p>{% endif %}
+</div>
 {% endblock %}

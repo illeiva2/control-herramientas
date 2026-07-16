@@ -11,3 +11,6 @@ instalador/
 # python
 __pycache__/
 .venv/
+
+# secretos: credenciales de Supabase / conexión (NUNCA subir)
+.env

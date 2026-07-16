@@ -2,39 +2,61 @@
 {% block title %}{{ k.nombre }} — Pañol{% endblock %}
 {% block content %}
 <p><a href="{{ url_for('cajas') }}">← Cajas</a></p>
-<h1>📦 {{ k.nombre }}</h1>
-{% if k.descripcion %}<p class="nota">{{ k.descripcion }}</p>{% endif %}
-<p><span class="tag {{ 'dev' if estado.en_campo else 'ent' }}">{{ estado.texto }}</span></p>
 
-<div class="acciones">
+<div class="page-head">
+  <div style="display:flex;align-items:center;gap:13px">
+    <span class="mov-ico" style="width:44px;height:44px;background:#e7f0e5;color:#31632c">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg>
+    </span>
+    <div>
+      <h1 style="margin:0">{{ k.nombre }}</h1>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
+        <span class="{{ 'badge-info' if estado.en_campo else 'badge-ok' }}">{{ estado.texto }}</span>
+      </div>
+      {% if k.descripcion %}<p class="nota" style="margin:6px 0 0">{{ k.descripcion }}</p>{% endif %}
+    </div>
+  </div>
+  <div class="acciones" style="margin:0">
   {% if estado.en_campo %}
     <a class="btn grande" href="{{ url_for('caja_evento', kid=k.id, tipo='retorno') }}">⮐ Registrar retorno</a>
   {% else %}
     <a class="btn grande" href="{{ url_for('caja_evento', kid=k.id, tipo='envio') }}">➜ Registrar envío</a>
   {% endif %}
+  </div>
 </div>
 
-<h2>Dotación</h2>
+<div class="seccion-card" style="margin-bottom:16px">
+  <div class="sc-head"><h2>Dotación</h2></div>
+  {% if estado.en_campo %}
+  <div class="flash" style="margin:12px 16px 0;background:#e3eef7;color:#17537f;border:1px solid #bcd7ea">
+    🔒 La caja está en el campo. Para agregar o quitar herramientas, primero registrá el retorno.
+  </div>
+  {% endif %}
 {% if items %}
 <table>
-  <thead><tr><th>Código</th><th>Herramienta</th><th class="der">Debe tener</th>
-             <th class="der">Tiene</th><th class="der">Faltan</th><th>Acciones</th></tr></thead>
+  <thead><tr><th>Herramienta</th><th class="centro">Debe tener</th>
+             <th class="centro">Tiene</th><th class="centro">Estado</th>
+             {% if not estado.en_campo %}<th class="der">Acciones</th>{% endif %}</tr></thead>
   <tbody>
   {% for i in items %}
     {% set faltan = i.dotacion - i.actual %}
     <tr>
-      <td>{{ i.codigo }}</td>
-      <td><a href="{{ url_for('herramienta', hid=i.herramienta_id) }}">{{ i.nombre }}</a></td>
-      <td class="der">{{ i.dotacion }}</td>
-      <td class="der">{{ i.actual }}</td>
-      <td class="der {% if faltan > 0 %}rojo{% endif %}">{{ faltan if faltan > 0 else '' }}</td>
-      <td class="acciones-item">
+      <td><span class="code">{{ i.codigo }}</span>
+          <a href="{{ url_for('herramienta', hid=i.herramienta_id) }}" style="display:block">{{ i.nombre }}</a></td>
+      <td class="centro num-cell">{{ i.dotacion }}</td>
+      <td class="centro num-cell">{{ i.actual }}</td>
+      <td class="centro">
+        {% if faltan > 0 %}<span class="badge-bad">Faltan {{ faltan }}</span>
+        {% else %}<span class="badge-ok">Completa</span>{% endif %}</td>
+      {% if not estado.en_campo %}
+      <td class="der">
+        <div class="acciones-item">
         {% if faltan > 0 %}
         <form method="post" action="{{ url_for('caja_transferir', kid=k.id) }}" class="inline">
           <input type="hidden" name="accion" value="reponer">
           <input type="hidden" name="herramienta_id" value="{{ i.herramienta_id }}">
           <input type="hidden" name="cantidad" value="{{ faltan }}">
-          <button class="btn mini" title="Cubrir el faltante sacando del stock del pañol (hay {{ i.stock_panol }})">⤵ Reponer del stock</button>
+          <button class="btn mini" title="Cubrir el faltante sacando del stock del pañol (hay {{ i.stock_panol }})">⤵ Reponer</button>
         </form>
         {% endif %}
         <form method="post" action="{{ url_for('caja_transferir', kid=k.id) }}" class="inline"
@@ -51,14 +73,18 @@
           <input type="hidden" name="cantidad" value="1">
           <button class="btn mini peligro" title="Dar de baja 1 (perdida/rota)">✕</button>
         </form>
+        </div>
       </td>
+      {% endif %}
     </tr>
   {% endfor %}
   </tbody>
 </table>
-{% else %}<p class="vacio">La caja está vacía: agregale herramientas acá abajo.</p>{% endif %}
+{% else %}<p class="vacio" style="margin:16px;border:none">La caja está vacía: agregale herramientas acá abajo.</p>{% endif %}
+</div>
 
-<section class="panel" style="margin-top:16px">
+{% if not estado.en_campo %}
+<section class="panel">
   <h2>Agregar herramienta a la caja</h2>
   <form method="post" action="{{ url_for('caja_transferir', kid=k.id) }}" class="grid" id="form-agregar-caja" autocomplete="off">
     <div class="campo ancho">
@@ -82,8 +108,10 @@
     <div class="campo"><label>&nbsp;</label><button class="btn">Agregar</button></div>
   </form>
 </section>
+{% endif %}
 
-<h2>Historial de envíos y retornos</h2>
+<div class="seccion-card">
+  <div class="sc-head"><h2>Historial de envíos y retornos</h2></div>
 {% if eventos %}
 <table>
   <thead><tr><th>Fecha</th><th>Tipo</th><th>Responsable</th><th>Destino</th><th>Resultado</th></tr></thead>
@@ -94,12 +122,13 @@
       <td><span class="tag {{ 'ent' if e.tipo == 'ENVIO' else 'dev' }}">{{ e.tipo }}</span></td>
       <td>{{ e.responsable or '' }}</td>
       <td>{{ e.destino or '' }}</td>
-      <td>{% if e.con_faltantes %}<span class="rojo">⚠ {{ e.con_faltantes }} herramienta(s) con faltante</span>
-          {% else %}<span style="color:#15803d">✔ Completa</span>{% endif %}
+      <td>{% if e.con_faltantes %}<span class="badge-bad">{{ e.con_faltantes }} con faltante</span>
+          {% else %}<span class="badge-ok">Completa</span>{% endif %}
           {% if e.observacion %}<div class="detalle">{{ e.observacion }}</div>{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
-{% else %}<p class="vacio">Sin envíos registrados todavía.</p>{% endif %}
+{% else %}<p class="vacio" style="margin:16px;border:none">Sin envíos registrados todavía.</p>{% endif %}
+</div>
 {% endblock %}

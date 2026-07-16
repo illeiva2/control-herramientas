@@ -1,98 +1,124 @@
 {% extends "base.html" %}
 {% block title %}Registrar — Pañol{% endblock %}
 {% block content %}
-<h1>Registrar movimientos</h1>
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Mostrador</div>
+    <h1>Registrar movimiento</h1>
+  </div>
+</div>
 
-<div class="form-registro" id="form-registro" data-condicion-defecto="{{ condiciones[0].id if condiciones }}">
-  <div class="flash ok" id="msg-ok" hidden></div>
-  <div class="flash error" id="msg-error" hidden></div>
+<div class="reg-grid">
+  <div id="form-registro" data-condicion-defecto="{{ condiciones[0].id if condiciones }}">
+    <div class="flash ok" id="msg-ok" hidden></div>
+    <div class="flash error" id="msg-error" hidden></div>
 
-  <div class="grid">
-    <div class="campo">
-      <label>Fecha</label>
-      <input type="date" id="fecha" value="{{ fecha }}" required>
+    <!-- control segmentado entrega / devolución -->
+    <div class="tabs">
+      <label class="tab on">
+        <input type="radio" name="tipo" value="ENTREGA" checked>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13M11 6l6 6-6 6"/></svg> Entrega
+      </label>
+      <label class="tab">
+        <input type="radio" name="tipo" value="DEVOLUCION">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H7M13 6l-6 6 6 6"/></svg> Devolución
+      </label>
     </div>
 
-    <div class="campo ancho">
-      <label>Trabajador <small>(nombre o DNI)</small></label>
-      <input type="text" id="empleado-buscar" placeholder="Escribí para buscar…"
-             value="{{ empleado.nombre if empleado else '' }}">
-      <input type="hidden" id="empleado_id" value="{{ empleado.id if empleado else '' }}">
-      <div class="sugerencias" id="empleado-sug"></div>
+    <!-- paso 1: trabajador -->
+    <div class="reg-card">
+      <div class="paso-head"><span class="paso-num">1</span><span class="paso-titulo">Trabajador y datos</span></div>
+      <div class="grid">
+        <div class="campo">
+          <label>Fecha</label>
+          <input type="date" id="fecha" value="{{ fecha }}" required>
+        </div>
+        <div class="campo ancho">
+          <label>Trabajador <small>(nombre o DNI)</small></label>
+          <input type="text" id="empleado-buscar" placeholder="Escribí para buscar…"
+                 value="{{ empleado.nombre if empleado else '' }}">
+          <input type="hidden" id="empleado_id" value="{{ empleado.id if empleado else '' }}">
+          <div class="sugerencias" id="empleado-sug"></div>
+        </div>
+        <div class="campo">
+          <label>Almacenista</label>
+          <select id="almacenista_id">
+            {% for a in almacenistas %}
+              <option value="{{ a.id }}" {% if almacenista_id == a.id|string %}selected{% endif %}>{{ a.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="pendientes-emp" id="pendientes-emp" hidden>
+        <div class="lbl-pend">Tiene pendiente de devolver — tocá para agregar la devolución a la lista</div>
+        <div class="chips" id="chips-pendientes"></div>
+      </div>
     </div>
 
-    <div class="campo">
-      <label>Almacenista</label>
-      <select id="almacenista_id">
-        <option value="">—</option>
-        {% for a in almacenistas %}
-          <option value="{{ a.id }}" {% if almacenista_id == a.id|string %}selected{% endif %}>{{ a.nombre }}</option>
-        {% endfor %}
-      </select>
+    <!-- paso 2: agregar herramienta -->
+    <div class="reg-card">
+      <div class="paso-head"><span class="paso-num">2</span><span class="paso-titulo">Agregar herramienta</span></div>
+      <div class="grid" style="grid-template-columns:120px 1fr">
+        <div class="campo ancho">
+          <label>Herramienta <small>(código o nombre)</small></label>
+          <input type="text" id="herramienta-buscar" placeholder="Ej.: 314 o llave…">
+          <input type="hidden" id="herramienta_id">
+          <div class="sugerencias" id="herramienta-sug"></div>
+          <div class="info-hta" id="info-hta"></div>
+        </div>
+        <div class="campo">
+          <label>Cantidad</label>
+          <input type="number" id="cantidad" value="1" min="1">
+        </div>
+        <div class="campo solo-devolucion" hidden>
+          <label>Condición</label>
+          <select id="condicion_id">
+            {% for c in condiciones %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="campo ancho">
+          <label>Observación <small>(opcional)</small></label>
+          <input type="text" id="observacion" maxlength="200">
+        </div>
+      </div>
+      <div class="campo">
+          <label>&nbsp;</label>
+          <button type="button" class="btn sec" id="btn-agregar">＋ Agregar a la lista</button>
+      </div>
+    </div>
+
+    <!-- carrito -->
+    <div class="reg-card" style="padding:0">
+      <div class="sc-head" style="padding:14px 16px;border-bottom:1px solid #e5e1da">
+        <h2 style="margin:0;font-size:14px">Carrito · <span id="cart-count">0</span> líneas</h2>
+      </div>
+      <div id="lote-vacio" style="padding:34px 16px;text-align:center;color:#9a948b;font-size:14px">
+        Agregá herramientas para armar el movimiento (con «Agregar a la lista» o desde los chips de pendientes).
+      </div>
+      <table id="tabla-lote" hidden>
+        <tbody id="lote-body"></tbody>
+      </table>
     </div>
   </div>
 
-  <div class="pendientes-emp" id="pendientes-emp" hidden>
-    <div class="lbl-pend">Tiene pendiente de devolver — tocá para agregar la devolución a la lista:</div>
-    <div class="chips" id="chips-pendientes"></div>
-  </div>
+  <!-- rail resumen -->
+  <aside class="reg-rail">
+    <div class="rail-t">Resumen</div>
+    <div class="res-row"><span class="k">Trabajador</span><span class="v" id="sum-worker">—</span></div>
+    <div class="res-row"><span class="k">Líneas de entrega</span><span class="v mono ent" id="sum-ent">0</span></div>
+    <div class="res-row"><span class="k">Líneas de devolución</span><span class="v mono dev" id="sum-dev">0</span></div>
+    <div class="res-row"><span class="k">Unidades totales</span><span class="v mono" id="sum-units">0</span></div>
 
-  <hr class="separador">
-
-  <div class="tabs">
-    <label class="tab on">
-      <input type="radio" name="tipo" value="ENTREGA" checked> ➜ Entrega
-    </label>
-    <label class="tab">
-      <input type="radio" name="tipo" value="DEVOLUCION"> ⮐ Devolución
-    </label>
-  </div>
-
-  <div class="grid">
-    <div class="campo ancho">
-      <label>Herramienta <small>(código o nombre)</small></label>
-      <input type="text" id="herramienta-buscar" placeholder="Ej.: 314 o llave…">
-      <input type="hidden" id="herramienta_id">
-      <div class="sugerencias" id="herramienta-sug"></div>
-      <div class="info-hta" id="info-hta"></div>
+    <div class="res-warn" id="sum-over" hidden>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/></svg>
+      <div><div class="wt">Stock insuficiente</div><div class="ws">Corregí las cantidades o forzá si el inventario está desactualizado.</div></div>
     </div>
 
-    <div class="campo chico">
-      <label>Cantidad</label>
-      <input type="number" id="cantidad" value="1" min="1">
-    </div>
-
-    <div class="campo solo-devolucion" hidden>
-      <label>Condición</label>
-      <select id="condicion_id">
-        {% for c in condiciones %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
-      </select>
-    </div>
-
-    <div class="campo ancho">
-      <label>Observación <small>(opcional)</small></label>
-      <input type="text" id="observacion" maxlength="200">
-    </div>
-
-    <div class="campo">
-      <label>&nbsp;</label>
-      <button type="button" class="btn sec" id="btn-agregar">＋ Agregar a la lista</button>
-    </div>
-  </div>
-
-  <div id="lote-vacio" class="vacio">Agregá líneas con el botón «Agregar a la lista» o desde los chips de pendientes.
-    Todo se registra junto al final.</div>
-
-  <table id="tabla-lote" hidden>
-    <thead>
-      <tr><th>Tipo</th><th>Herramienta</th><th class="der">Cant.</th><th>Condición</th><th>Observación</th><th></th></tr>
-    </thead>
-    <tbody id="lote-body"></tbody>
-  </table>
-
-  <div class="pie-form">
     <label class="forzar"><input type="checkbox" id="forzar"> Registrar de todos modos (saltear validación de stock/pendientes)</label>
-    <button type="button" class="btn grande" id="btn-registrar" disabled>Registrar todo (0)</button>
-  </div>
+
+    <button type="button" class="btn grande" id="btn-registrar" disabled>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      Registrar todo (0)</button>
+  </aside>
 </div>
 {% endblock %}

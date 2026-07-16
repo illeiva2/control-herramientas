@@ -1,62 +1,195 @@
 {% extends "base.html" %}
 {% block title %}Maestros — Pañol{% endblock %}
 {% block content %}
-<h1>Maestros</h1>
-<p class="nota">Alta de herramientas, trabajadores, almacenistas y condiciones.</p>
-
-<div class="dos-col">
-  <section class="panel">
-    <h2>Nueva herramienta</h2>
-    <form method="post" class="grid">
-      <input type="hidden" name="que" value="herramienta">
-      <div class="campo chico"><label>Código</label><input name="codigo" required></div>
-      <div class="campo ancho"><label>Nombre</label><input name="nombre" required></div>
-      <div class="campo chico"><label>Cantidad</label><input type="number" name="cantidad" value="1" min="0"></div>
-      <div class="campo chico"><label>Módulo</label><input name="modulo" placeholder="1-7 / PARED"></div>
-      <div class="campo chico"><label>Estante</label><input name="estante" placeholder="A / B / P"></div>
-      <div class="campo ancho"><label>Ubicación (texto)</label><input name="ubicacion" placeholder="Ej.: Góndola 3 - Estante A"></div>
-      <div class="campo ancho"><label>Detalle</label><input name="detalle"></div>
-      <div class="campo"><button class="btn">Agregar</button></div>
-    </form>
-  </section>
-
-  <section class="panel">
-    <h2>Nuevo trabajador</h2>
-    <form method="post" class="grid">
-      <input type="hidden" name="que" value="empleado">
-      <div class="campo ancho"><label>Nombre</label><input name="nombre" required></div>
-      <div class="campo chico"><label>DNI</label><input name="dni"></div>
-      <div class="campo"><button class="btn">Agregar</button></div>
-    </form>
-
-    <h2>Nuevo almacenista</h2>
-    <form method="post" class="grid">
-      <input type="hidden" name="que" value="almacenista">
-      <div class="campo ancho"><label>Nombre</label><input name="nombre" required></div>
-      <div class="campo chico"><label>DNI</label><input name="dni"></div>
-      <div class="campo"><button class="btn">Agregar</button></div>
-    </form>
-    <ul class="listado">
-      {% for a in almacenistas %}
-        <li class="{% if not a.activo %}baja{% endif %}">{{ a.nombre }}
-          <form method="post" action="{{ url_for('maestros_baja') }}" class="inline">
-            <input type="hidden" name="tabla" value="almacenistas">
-            <input type="hidden" name="id" value="{{ a.id }}">
-            <button class="btn mini sec">{{ 'Reactivar' if not a.activo else 'Dar de baja' }}</button>
-          </form>
-        </li>
-      {% endfor %}
-    </ul>
-
-    <h2>Nueva condición de devolución</h2>
-    <form method="post" class="grid">
-      <input type="hidden" name="que" value="condicion">
-      <div class="campo ancho"><label>Nombre</label><input name="nombre" required></div>
-      <div class="campo"><button class="btn">Agregar</button></div>
-    </form>
-    <ul class="listado">
-      {% for c in condiciones %}<li>{{ c.nombre }}</li>{% endfor %}
-    </ul>
-  </section>
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Configuración</div>
+    <h1>Maestros</h1>
+  </div>
 </div>
+
+{% macro baja_btn(tabla, item) %}
+  <form method="post" action="{{ url_for('maestros_baja') }}" class="inline">
+    <input type="hidden" name="tabla" value="{{ tabla }}">
+    <input type="hidden" name="id" value="{{ item.id }}">
+    <button class="btn mini sec">{{ 'Reactivar' if not item.activo else 'Dar de baja' }}</button>
+  </form>
+{% endmacro %}
+
+{# borrado definitivo: solo se muestra cuando el registro no tiene nada asociado #}
+{% macro eliminar_btn(tabla, item) %}
+  <form method="post" action="{{ url_for('maestros_eliminar') }}" class="inline"
+        onsubmit="return confirm('¿Eliminar definitivamente? No se puede deshacer.')">
+    <input type="hidden" name="tabla" value="{{ tabla }}">
+    <input type="hidden" name="id" value="{{ item.id }}">
+    <button class="btn mini peligro">Eliminar</button>
+  </form>
+{% endmacro %}
+
+{# panel ABM para maestros simples (nombre [+ dni]) #}
+{% macro panel_simple(sec, que, tabla, singular, plural, items, con_dni, ph_nombre, tab, editando, usados) %}
+{% set ed = editando if tab == sec else none %}
+<section class="mt-panel" data-tab="{{ sec }}" {% if tab != sec %}hidden{% endif %}>
+  <div class="maestro-grid">
+    <section class="panel">
+      <h2>{{ ('Editar ' ~ singular) if ed else ('Alta de ' ~ singular) }}</h2>
+      <form method="post" class="form-col">
+        <input type="hidden" name="que" value="{{ que }}">
+        {% if ed %}<input type="hidden" name="id" value="{{ ed.id }}">{% endif %}
+        <div class="campo"><label>Nombre</label>
+          <input name="nombre" required value="{{ ed.nombre if ed else '' }}" placeholder="{{ ph_nombre }}"></div>
+        {% if con_dni %}
+        <div class="campo"><label>DNI <small>(opcional)</small></label>
+          <input name="dni" value="{{ ed.dni if ed else '' }}"></div>
+        {% endif %}
+        <button class="btn grande">{{ 'Guardar cambios' if ed else 'Agregar' }}</button>
+        {% if ed %}<a class="btn sec" href="{{ url_for('maestros', tab=sec) }}" style="text-align:center">Cancelar</a>{% endif %}
+      </form>
+    </section>
+    <section class="seccion-card">
+      <div class="sc-head"><h2>{{ plural }}</h2></div>
+      <div class="mt-lista-scroll">
+        <table>
+          <thead><tr><th>Nombre</th>{% if con_dni %}<th>DNI</th>{% endif %}<th class="der">Acciones</th></tr></thead>
+          <tbody>
+          {% for it in items %}
+            <tr class="{% if not it.activo %}baja{% endif %}">
+              <td style="font-weight:600">{{ it.nombre }}{% if not it.activo %} <span class="badge-neutral">baja</span>{% endif %}</td>
+              {% if con_dni %}<td class="nota num-cell">{{ it.dni or '—' }}</td>{% endif %}
+              <td class="der"><div class="acciones-item">
+                <a class="btn mini sec" href="{{ url_for('maestros', tab=sec, editar=it.id) }}">Editar</a>
+                {{ baja_btn(tabla, it) }}
+                {% if it.id not in usados %}{{ eliminar_btn(tabla, it) }}{% endif %}
+              </div></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</section>
+{% endmacro %}
+
+<div class="mt-tabs" id="mt-tabs">
+  <button type="button" class="mt-tab {% if tab=='herramientas' %}on{% endif %}" data-tab="herramientas">Herramientas <span class="n">{{ herramientas|length }}</span></button>
+  <button type="button" class="mt-tab {% if tab=='trabajadores' %}on{% endif %}" data-tab="trabajadores">Trabajadores <span class="n">{{ empleados|length }}</span></button>
+  <button type="button" class="mt-tab {% if tab=='almacenistas' %}on{% endif %}" data-tab="almacenistas">Almacenistas <span class="n">{{ almacenistas|length }}</span></button>
+  <button type="button" class="mt-tab {% if tab=='condiciones' %}on{% endif %}" data-tab="condiciones">Condiciones <span class="n">{{ condiciones|length }}</span></button>
+  <button type="button" class="mt-tab {% if tab=='gondolas' %}on{% endif %}" data-tab="gondolas">Góndolas <span class="n">{{ gondolas|length }}</span></button>
+  <button type="button" class="mt-tab {% if tab=='estantes' %}on{% endif %}" data-tab="estantes">Estantes <span class="n">{{ estantes|length }}</span></button>
+</div>
+
+<!-- ===== HERRAMIENTAS (alta y edición en el mismo formulario) ===== -->
+{% set edh = editando if tab == 'herramientas' else none %}
+<section class="mt-panel" data-tab="herramientas" {% if tab!='herramientas' %}hidden{% endif %}>
+  <div class="maestro-grid">
+    <section class="panel">
+      <h2>{{ 'Editar herramienta' if edh else 'Alta de herramienta' }}</h2>
+      <form method="post" class="form-col">
+        <input type="hidden" name="que" value="herramienta">
+        {% if edh %}<input type="hidden" name="id" value="{{ edh.id }}">{% endif %}
+        <div class="campo"><label>Código {% if not edh %}<small>(automático)</small>{% endif %}</label>
+          {% if edh %}
+            <input name="codigo" required value="{{ edh.codigo }}">
+          {% else %}
+            <input name="codigo" required value="{{ proximo_codigo }}" readonly title="Se asigna solo: el siguiente al más alto">
+          {% endif %}
+        </div>
+        <div class="campo"><label>Nombre</label><input name="nombre" required value="{{ edh.nombre if edh else '' }}" placeholder="Ej.: Llave francesa 12″"></div>
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div class="campo"><label>Góndola</label>
+            <select name="modulo">
+              <option value="">—</option>
+              {% if edh and edh.modulo and edh.modulo not in gondolas|selectattr('activo')|map(attribute='nombre')|list %}<option value="{{ edh.modulo }}" selected>{{ edh.modulo }} (actual)</option>{% endif %}
+              {% for g in gondolas if g.activo %}<option value="{{ g.nombre }}" {% if edh and edh.modulo == g.nombre %}selected{% endif %}>{{ g.nombre }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="campo"><label>Estante</label>
+            <select name="estante">
+              <option value="">—</option>
+              {% if edh and edh.estante and edh.estante not in estantes|selectattr('activo')|map(attribute='nombre')|list %}<option value="{{ edh.estante }}" selected>{{ edh.estante }} (actual)</option>{% endif %}
+              {% for e in estantes if e.activo %}<option value="{{ e.nombre }}" {% if edh and edh.estante == e.nombre %}selected{% endif %}>{{ e.nombre }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="campo"><label>Stock físico</label><input type="number" name="cantidad" value="{{ edh.cantidad if edh else 1 }}" min="0"></div>
+        <div class="campo"><label>Detalle <small>(opcional)</small></label><input name="detalle" value="{{ edh.detalle if edh else '' }}"></div>
+        <button class="btn grande">{{ 'Guardar cambios' if edh else 'Dar de alta' }}</button>
+        {% if edh %}<a class="btn sec" href="{{ url_for('maestros', tab='herramientas') }}" style="text-align:center">Cancelar</a>{% endif %}
+      </form>
+    </section>
+
+    <section class="seccion-card">
+      <div class="sc-head"><h2>Herramientas registradas</h2></div>
+      <div class="mt-filtro">
+        <div class="search-wrap">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+          <input type="search" id="mt-h-filtro" placeholder="Filtrar por código o nombre…">
+        </div>
+      </div>
+      <div class="mt-lista-scroll">
+        <table>
+          <thead><tr><th>Código</th><th>Herramienta</th><th>Ubicación</th><th class="der">Acciones</th></tr></thead>
+          <tbody id="mt-h-body">
+          {% for h in herramientas %}
+            <tr class="mt-h-fila {% if not h.activo %}baja{% endif %}"
+                data-buscar="{{ (h.codigo ~ ' ' ~ h.nombre)|lower }}">
+              <td><span class="code">{{ h.codigo }}</span></td>
+              <td>{{ h.nombre }}{% if not h.activo %} <span class="badge-neutral">baja</span>{% endif %}</td>
+              <td class="nota">{{ h.ubicacion or '—' }}</td>
+              <td class="der"><div class="acciones-item">
+                <a class="btn mini sec" href="{{ url_for('maestros', tab='herramientas', editar=h.id) }}">Editar</a>
+                {{ baja_btn('herramientas', h) }}
+                {% if h.id not in usados['herramientas'] %}{{ eliminar_btn('herramientas', h) }}{% endif %}
+              </div></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <p class="vacio" id="mt-h-vacio" hidden style="margin:16px;border:none">Ninguna coincide.</p>
+      </div>
+    </section>
+  </div>
+</section>
+
+{{ panel_simple('trabajadores', 'empleado', 'empleados', 'trabajador', 'Trabajadores', empleados, true, 'Nombre y apellido', tab, editando, usados['empleados']) }}
+{{ panel_simple('almacenistas', 'almacenista', 'almacenistas', 'almacenista', 'Almacenistas', almacenistas, true, 'Nombre y apellido', tab, editando, usados['almacenistas']) }}
+{{ panel_simple('condiciones', 'condicion', 'condiciones', 'condición', 'Condiciones', condiciones, false, 'Ej.: Buena / Rota', tab, editando, usados['condiciones']) }}
+{{ panel_simple('gondolas', 'gondola', 'gondolas', 'góndola', 'Góndolas', gondolas, false, 'Ej.: 3 / PARED', tab, editando, usados['gondolas']) }}
+{{ panel_simple('estantes', 'estante', 'estantes', 'estante', 'Estantes', estantes, false, 'Ej.: A / B / P', tab, editando, usados['estantes']) }}
+
+<script>
+(function () {
+  var tabs = document.getElementById("mt-tabs");
+  if (!tabs) return;
+  var botones = [].slice.call(tabs.querySelectorAll(".mt-tab"));
+  var paneles = [].slice.call(document.querySelectorAll(".mt-panel"));
+  function activar(nombre) {
+    botones.forEach(function (b) { b.classList.toggle("on", b.dataset.tab === nombre); });
+    paneles.forEach(function (p) { p.hidden = p.dataset.tab !== nombre; });
+    try { history.replaceState(null, "", "?tab=" + nombre); } catch (e) {}
+  }
+  botones.forEach(function (b) {
+    b.addEventListener("click", function () { activar(b.dataset.tab); });
+  });
+
+  // filtro de la lista de herramientas
+  var filtro = document.getElementById("mt-h-filtro");
+  if (filtro) {
+    var filas = [].slice.call(document.querySelectorAll(".mt-h-fila"));
+    var vacio = document.getElementById("mt-h-vacio");
+    filtro.addEventListener("input", function () {
+      var q = filtro.value.trim().toLowerCase();
+      var visibles = 0;
+      filas.forEach(function (tr) {
+        var pasa = !q || tr.dataset.buscar.indexOf(q) !== -1;
+        tr.hidden = !pasa;
+        if (pasa) visibles++;
+      });
+      if (vacio) vacio.hidden = visibles > 0;
+    });
+  }
+})();
+</script>
 {% endblock %}
