@@ -12,9 +12,11 @@ instalador/
 __pycache__/
 .venv/
 
-# secretos: credenciales de Supabase / conexión (NUNCA subir)
+# secretos: credenciales de conexión (NUNCA subir)
 .env
 .env.code
+.env.servidor
+setup_db.sql
 
 # bases de datos y respaldos con datos del personal (NUNCA subir)
 panol.db
