@@ -14,3 +14,8 @@ __pycache__/
 
 # secretos: credenciales de Supabase / conexión (NUNCA subir)
 .env
+.env.code
+
+# bases de datos y respaldos con datos del personal (NUNCA subir)
+panol.db
+respaldo-*.json

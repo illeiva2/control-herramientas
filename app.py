@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from flask import (Flask, flash, g, jsonify, redirect, render_template,
                    request, url_for, Response)
 import psycopg
+from psycopg_pool import ConnectionPool
 
 import updater
 from version import VERSION
@@ -65,12 +66,19 @@ class _Conn:
         self._c.close()
 
 
+# pool de conexiones: sin esto, cada request abre una conexion TLS nueva contra
+# Supabase (region us-west-2) y cada pagina tarda ~2 s solo en el handshake.
+# prepare_threshold=None: evita prepared statements (necesario con el pooler
+# de Supabase en modo transaccion / pgbouncer).
+_pool = ConnectionPool(
+    DATABASE_URL, min_size=0, max_size=8, open=True,
+    kwargs={"row_factory": _row_factory, "prepare_threshold": None},
+) if DATABASE_URL else None
+
+
 def db():
     if "db" not in g:
-        # prepare_threshold=None: evita prepared statements (necesario con el pooler
-        # de Supabase en modo transaccion / pgbouncer).
-        g.db = _Conn(psycopg.connect(DATABASE_URL, row_factory=_row_factory,
-                                     prepare_threshold=None))
+        g.db = _Conn(_pool.getconn())
     return g.db
 
 
@@ -100,7 +108,8 @@ def actualizar():
 def close_db(_exc):
     d = g.pop("db", None)
     if d:
-        d.close()
+        # devolver la conexion al pool (hace rollback de lo no commiteado)
+        _pool.putconn(d._c)
 
 
 # saldo pendiente por herramienta: entregas - devoluciones
