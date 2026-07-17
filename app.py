@@ -348,7 +348,8 @@ def movimientos():
     """
     params = []
     if q:
-        sql += " AND (e.nombre LIKE ? OR h.nombre LIKE ? OR h.codigo LIKE ?)"
+        sql += (" AND (unaccent(e.nombre) ILIKE unaccent(?)"
+                " OR unaccent(h.nombre) ILIKE unaccent(?) OR h.codigo ILIKE ?)")
         params += ["%" + q + "%", "%" + q + "%", q + "%"]
     if tipo in ("ENTREGA", "DEVOLUCION"):
         sql += " AND m.tipo = ?"
@@ -941,8 +942,8 @@ def api_herramientas():
                COALESCE(s.pendiente, 0) AS pendiente,
                h.cantidad - COALESCE(s.pendiente, 0) AS disponible
         FROM herramientas h LEFT JOIN ({SALDO_HTA}) s ON s.herramienta_id = h.id
-        WHERE h.activo = 1 AND (h.codigo LIKE ? OR h.nombre LIKE ?)
-        ORDER BY CASE WHEN h.codigo = ? THEN 0 WHEN h.codigo LIKE ? THEN 1 ELSE 2 END,
+        WHERE h.activo = 1 AND (h.codigo ILIKE ? OR unaccent(h.nombre) ILIKE unaccent(?))
+        ORDER BY CASE WHEN h.codigo = ? THEN 0 WHEN h.codigo ILIKE ? THEN 1 ELSE 2 END,
                  h.nombre LIMIT 15
     """, (q + "%", "%" + q + "%", q, q + "%")).fetchall()
     return jsonify([dict(r) for r in rows])
@@ -953,7 +954,7 @@ def api_empleados():
     q = request.args.get("q", "").strip()
     rows = db().execute("""
         SELECT id, dni, nombre FROM empleados
-        WHERE activo = 1 AND (nombre LIKE ? OR dni LIKE ?)
+        WHERE activo = 1 AND (unaccent(nombre) ILIKE unaccent(?) OR dni ILIKE ?)
         ORDER BY nombre LIMIT 15
     """, ("%" + q + "%", q + "%")).fetchall()
     return jsonify([dict(r) for r in rows])
