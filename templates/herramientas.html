@@ -40,6 +40,7 @@
             data-prestadas="{{ 1 if h.pendiente > 0 else 0 }}">
           <td><span class="code">{{ h.codigo }}</span></td>
           <td><a href="{{ url_for('herramienta', hid=h.id) }}">{{ h.nombre }}</a>
+              {% if h.multi %}<span class="badge-neutral" title="Esta herramienta está repartida en varias ubicaciones">×{{ h.en_ubicacion }} acá</span>{% endif %}
               {% if h.detalle %}<div class="detalle">{{ h.detalle }}</div>{% endif %}</td>
           <td class="centro num-cell">{{ h.cantidad }}</td>
           <td class="centro num-cell {% if h.pendiente > 0 %}naranja{% endif %}">{{ h.pendiente }}</td>

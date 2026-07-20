@@ -193,12 +193,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // ------- autocompletado para agregar herramientas a una caja -------
 document.addEventListener("DOMContentLoaded", () => {
-  const form = document.getElementById("form-agregar-caja");
-  if (!form) return;
+  const panelCaja = document.getElementById("form-agregar-caja");
+  if (!panelCaja) return;
   const infoHta = document.getElementById("info-hta");
   const hidden = document.getElementById("herramienta_id");
+  const inputHta = document.getElementById("herramienta-buscar");
+  const cantidad = document.getElementById("caja-cantidad");
+  const origen = document.getElementById("caja-origen");
+  const btnGuardar = document.getElementById("caja-btn-guardar");
+  let htaElegida = null;
+  let lote = [];
+
   combobox({
-    input: document.getElementById("herramienta-buscar"),
+    input: inputHta,
     hidden,
     panel: document.getElementById("herramienta-sug"),
     url: "/api/herramientas",
@@ -206,15 +213,69 @@ document.addEventListener("DOMContentLoaded", () => {
       `<div><b>[${it.codigo}]</b> ${it.nombre}</div>` +
       `<div class="sub">${it.ubicacion || ""} — disp. en pañol: ${it.disponible}</div>`,
     onPick: (it) => {
+      htaElegida = it;
       infoHta.textContent = it
         ? `Stock pañol: ${it.cantidad} · Disponibles: ${it.disponible}` : "";
+      if (it) cantidad.focus();
     },
   });
-  form.addEventListener("submit", (e) => {
-    if (!hidden.value) {
-      e.preventDefault();
+
+  function pintarLoteCaja() {
+    const body = document.getElementById("caja-lote-body");
+    body.innerHTML = "";
+    lote.forEach((ln, i) => {
+      const tr = document.createElement("tr");
+      const esAlta = ln.accion === "agregar_alta";
+      tr.innerHTML =
+        `<td><span class="code">${ln.codigo}</span> ${ln.nombre}</td>` +
+        `<td class="centro num-cell">${ln.cantidad}</td>` +
+        `<td><span class="${esAlta ? "badge-ok" : "badge-info"}">${esAlta ? "Propia de la caja" : "Del stock"}</span></td>` +
+        `<td class="der"><button type="button" class="btn mini peligro" title="Quitar">✕</button></td>`;
+      tr.querySelector("button").addEventListener("click", () => {
+        lote.splice(i, 1);
+        pintarLoteCaja();
+      });
+      body.appendChild(tr);
+    });
+    document.getElementById("caja-lote-tabla").hidden = lote.length === 0;
+    btnGuardar.disabled = lote.length === 0;
+    btnGuardar.textContent = `Guardar en la caja (${lote.length})`;
+    const delStock = lote.filter((l) => l.accion === "agregar_stock").length;
+    document.getElementById("caja-lote-resumen").textContent =
+      delStock ? `${delStock} línea(s) descuentan del stock del pañol` : "";
+  }
+
+  function agregarLineaCaja() {
+    if (!hidden.value || !htaElegida) {
       alert("Elegí la herramienta desde la lista de sugerencias.");
+      inputHta.focus();
+      return;
     }
+    const cant = parseInt(cantidad.value, 10);
+    if (!cant || cant < 1) {
+      alert("La cantidad debe ser 1 o más.");
+      return;
+    }
+    lote.push({
+      herramienta_id: htaElegida.id, codigo: htaElegida.codigo, nombre: htaElegida.nombre,
+      cantidad: cant, accion: origen.value,
+    });
+    pintarLoteCaja();
+    inputHta.value = ""; hidden.value = ""; htaElegida = null;
+    infoHta.textContent = ""; cantidad.value = 1;
+    inputHta.focus();
+  }
+
+  document.getElementById("caja-btn-agregar").addEventListener("click", agregarLineaCaja);
+  cantidad.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); agregarLineaCaja(); }
+  });
+
+  document.getElementById("form-caja-lote").addEventListener("submit", (e) => {
+    if (!lote.length) { e.preventDefault(); return; }
+    document.getElementById("caja-items-json").value = JSON.stringify(
+      lote.map((l) => ({ herramienta_id: l.herramienta_id, cantidad: l.cantidad, accion: l.accion }))
+    );
   });
 });
 

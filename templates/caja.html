@@ -84,28 +84,41 @@
 </div>
 
 {% if not estado.en_campo %}
-<section class="panel">
-  <h2>Agregar herramienta a la caja</h2>
-  <form method="post" action="{{ url_for('caja_transferir', kid=k.id) }}" class="grid" id="form-agregar-caja" autocomplete="off">
+<section class="panel" id="form-agregar-caja" data-caja="{{ k.id }}">
+  <h2>Agregar herramientas a la caja</h2>
+  <p class="nota" style="margin:-4px 0 12px">Armá la lista y guardá todo junto.</p>
+  <div class="grid" autocomplete="off">
     <div class="campo ancho">
       <label>Herramienta <small>(código o nombre)</small></label>
       <input type="text" id="herramienta-buscar" placeholder="Escribí para buscar…">
-      <input type="hidden" name="herramienta_id" id="herramienta_id">
+      <input type="hidden" id="herramienta_id">
       <div class="sugerencias" id="herramienta-sug"></div>
       <div class="info-hta" id="info-hta"></div>
     </div>
     <div class="campo chico">
       <label>Cantidad</label>
-      <input type="number" name="cantidad" value="1" min="1">
+      <input type="number" id="caja-cantidad" value="1" min="1">
     </div>
     <div class="campo ancho">
       <label>Origen</label>
-      <select name="accion">
+      <select id="caja-origen">
+        <option value="agregar_alta" selected>Nueva / propia de la caja (no toca el stock)</option>
         <option value="agregar_stock">Del stock del pañol (descuenta del estante)</option>
-        <option value="agregar_alta">Nueva / propia de la caja (no toca el stock)</option>
       </select>
     </div>
-    <div class="campo"><label>&nbsp;</label><button class="btn">Agregar</button></div>
+    <div class="campo"><label>&nbsp;</label>
+      <button type="button" class="btn sec" id="caja-btn-agregar">＋ Agregar a la lista</button>
+    </div>
+  </div>
+
+  <table id="caja-lote-tabla" hidden style="margin-top:12px">
+    <tbody id="caja-lote-body"></tbody>
+  </table>
+
+  <form method="post" action="{{ url_for('caja_agregar_lote', kid=k.id) }}" id="form-caja-lote" class="pie-form">
+    <input type="hidden" name="items_json" id="caja-items-json">
+    <span class="nota" id="caja-lote-resumen"></span>
+    <button class="btn grande" id="caja-btn-guardar" disabled>Guardar en la caja (0)</button>
   </form>
 </section>
 {% endif %}

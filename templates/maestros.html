@@ -89,31 +89,51 @@
       <form method="post" class="form-col">
         <input type="hidden" name="que" value="herramienta">
         {% if edh %}<input type="hidden" name="id" value="{{ edh.id }}">{% endif %}
-        <div class="campo"><label>Código {% if not edh %}<small>(automático)</small>{% endif %}</label>
-          {% if edh %}
-            <input name="codigo" required value="{{ edh.codigo }}">
-          {% else %}
-            <input name="codigo" required value="{{ proximo_codigo }}" readonly title="Se asigna solo: el siguiente al más alto">
-          {% endif %}
+        <div class="campo"><label>Código {% if not edh %}<small>(sugerido — podés cambiarlo, no puede repetirse)</small>{% endif %}</label>
+          <input name="codigo" required value="{{ edh.codigo if edh else proximo_codigo }}">
         </div>
         <div class="campo"><label>Nombre</label><input name="nombre" required value="{{ edh.nombre if edh else '' }}" placeholder="Ej.: Llave francesa 12″"></div>
-        <div class="grid" style="grid-template-columns:1fr 1fr">
-          <div class="campo"><label>Góndola</label>
-            <select name="modulo">
-              <option value="">—</option>
-              {% if edh and edh.modulo and edh.modulo not in gondolas|selectattr('activo')|map(attribute='nombre')|list %}<option value="{{ edh.modulo }}" selected>{{ edh.modulo }} (actual)</option>{% endif %}
-              {% for g in gondolas if g.activo %}<option value="{{ g.nombre }}" {% if edh and edh.modulo == g.nombre %}selected{% endif %}>{{ g.nombre }}</option>{% endfor %}
-            </select>
+
+        <div class="campo">
+          <label>Ubicaciones <small>(dónde se guarda y cuántas en cada lugar)</small></label>
+          <div id="ubic-rows" class="form-col" style="gap:8px">
+            {% for u in ubicaciones_edit %}
+            <div class="ubic-row" style="display:grid;grid-template-columns:1fr 1fr 84px 36px;gap:8px">
+              <select name="ubic_gondola">
+                <option value="">— góndola —</option>
+                {% if u.gondola and u.gondola not in gondolas|selectattr('activo')|map(attribute='nombre')|list %}<option value="{{ u.gondola }}" selected>{{ u.gondola }} (actual)</option>{% endif %}
+                {% for g in gondolas if g.activo %}<option value="{{ g.nombre }}" {% if u.gondola == g.nombre %}selected{% endif %}>{{ g.nombre }}</option>{% endfor %}
+              </select>
+              <select name="ubic_estante">
+                <option value="">— estante —</option>
+                {% if u.estante and u.estante not in estantes|selectattr('activo')|map(attribute='nombre')|list %}<option value="{{ u.estante }}" selected>{{ u.estante }} (actual)</option>{% endif %}
+                {% for e in estantes if e.activo %}<option value="{{ e.nombre }}" {% if u.estante == e.nombre %}selected{% endif %}>{{ e.nombre }}</option>{% endfor %}
+              </select>
+              <input type="number" name="ubic_cantidad" min="0" value="{{ u.cantidad }}" title="Cantidad en esta ubicación">
+              <button type="button" class="btn mini peligro ubic-del" title="Quitar ubicación">✕</button>
+            </div>
+            {% endfor %}
           </div>
-          <div class="campo"><label>Estante</label>
-            <select name="estante">
-              <option value="">—</option>
-              {% if edh and edh.estante and edh.estante not in estantes|selectattr('activo')|map(attribute='nombre')|list %}<option value="{{ edh.estante }}" selected>{{ edh.estante }} (actual)</option>{% endif %}
-              {% for e in estantes if e.activo %}<option value="{{ e.nombre }}" {% if edh and edh.estante == e.nombre %}selected{% endif %}>{{ e.nombre }}</option>{% endfor %}
-            </select>
-          </div>
+          <button type="button" class="btn mini sec" id="ubic-add" style="margin-top:6px;align-self:start">＋ Otra ubicación</button>
         </div>
-        <div class="campo"><label>Stock físico</label><input type="number" name="cantidad" value="{{ edh.cantidad if edh else 1 }}" min="0"></div>
+
+        <template id="ubic-tpl">
+          <div class="ubic-row" style="display:grid;grid-template-columns:1fr 1fr 84px 36px;gap:8px">
+            <select name="ubic_gondola">
+              <option value="">— góndola —</option>
+              {% for g in gondolas if g.activo %}<option value="{{ g.nombre }}">{{ g.nombre }}</option>{% endfor %}
+            </select>
+            <select name="ubic_estante">
+              <option value="">— estante —</option>
+              {% for e in estantes if e.activo %}<option value="{{ e.nombre }}">{{ e.nombre }}</option>{% endfor %}
+            </select>
+            <input type="number" name="ubic_cantidad" min="0" value="1" title="Cantidad en esta ubicación">
+            <button type="button" class="btn mini peligro ubic-del" title="Quitar ubicación">✕</button>
+          </div>
+        </template>
+
+        <div class="campo"><label>Stock físico total <small>(se suma solo desde las ubicaciones)</small></label>
+          <input type="number" name="cantidad" id="ubic-total" value="{{ edh.cantidad if edh else 1 }}" min="0"></div>
         <div class="campo"><label>Detalle <small>(opcional)</small></label><input name="detalle" value="{{ edh.detalle if edh else '' }}"></div>
         <button class="btn grande">{{ 'Guardar cambios' if edh else 'Dar de alta' }}</button>
         {% if edh %}<a class="btn sec" href="{{ url_for('maestros', tab='herramientas') }}" style="text-align:center">Cancelar</a>{% endif %}
@@ -189,6 +209,38 @@
       });
       if (vacio) vacio.hidden = visibles > 0;
     });
+  }
+})();
+
+// ---- ubicaciones multiples en alta/edicion de herramienta ----
+(function () {
+  var cont = document.getElementById("ubic-rows");
+  if (!cont) return;
+  var tpl = document.getElementById("ubic-tpl");
+  var total = document.getElementById("ubic-total");
+
+  function sumar() {
+    var inputs = cont.querySelectorAll("input[name=ubic_cantidad]");
+    if (!inputs.length) return;   // sin ubicaciones: el total se maneja a mano
+    var s = 0;
+    inputs.forEach(function (i) { s += parseInt(i.value, 10) || 0; });
+    total.value = s;
+  }
+
+  cont.addEventListener("click", function (e) {
+    var btn = e.target.closest(".ubic-del");
+    if (btn) { btn.closest(".ubic-row").remove(); sumar(); }
+  });
+  cont.addEventListener("input", function (e) {
+    if (e.target.name === "ubic_cantidad") sumar();
+  });
+  document.getElementById("ubic-add").addEventListener("click", function () {
+    cont.appendChild(tpl.content.cloneNode(true));
+    sumar();
+  });
+  // alta: arrancar con una fila vacia
+  if (!cont.querySelector(".ubic-row")) {
+    cont.appendChild(tpl.content.cloneNode(true));
   }
 })();
 </script>

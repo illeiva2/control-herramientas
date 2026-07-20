@@ -218,12 +218,31 @@ def nombre_modulo(m):
 
 @app.route("/herramientas")
 def herramientas():
-    rows = db().execute(f"""
+    c = db()
+    base_rows = c.execute(f"""
         SELECT h.*, COALESCE(s.pendiente, 0) AS pendiente,
                h.cantidad - COALESCE(s.pendiente, 0) AS disponible
         FROM herramientas h LEFT JOIN ({SALDO_HTA}) s ON s.herramienta_id = h.id
         WHERE h.activo = 1
     """).fetchall()
+
+    # una herramienta con varias ubicaciones aparece en cada una de sus secciones
+    ubic_map = {}
+    for u in c.execute("SELECT herramienta_id, gondola, estante, cantidad FROM ubicaciones").fetchall():
+        ubic_map.setdefault(u["herramienta_id"], []).append(u)
+    rows = []
+    for h in base_rows:
+        us = ubic_map.get(h["id"])
+        if us:
+            for u in us:
+                d = dict(h)
+                d["modulo"], d["estante"] = u["gondola"], u["estante"]
+                d["en_ubicacion"], d["multi"] = u["cantidad"], len(us) > 1
+                rows.append(d)
+        else:
+            d = dict(h)
+            d["en_ubicacion"], d["multi"] = None, False
+            rows.append(d)
 
     def orden(h):
         m, e = h["modulo"], h["estante"]
@@ -261,7 +280,7 @@ def herramientas():
 
     modulos = [(g["modulo"], g["nombre"]) for g in grupos]
     return render_template("herramientas.html", grupos=grupos, modulos=modulos,
-                           total=len(rows), q=request.args.get("q", "").strip())
+                           total=len(base_rows), q=request.args.get("q", "").strip())
 
 
 @app.route("/herramientas/<int:hid>")
@@ -541,11 +560,11 @@ def caja_transferir(kid):
         direccion, msj = "DESDE_STOCK", "Faltante repuesto desde el stock del pañol."
     elif accion == "a_stock":
         c.execute("UPDATE herramientas SET cantidad = cantidad + ? WHERE id = ?", (cant, hid))
-        c.execute("""UPDATE caja_items SET dotacion = MAX(dotacion - ?, 0), actual = actual - ?
+        c.execute("""UPDATE caja_items SET dotacion = GREATEST(dotacion - ?, 0), actual = actual - ?
                      WHERE caja_id = ? AND herramienta_id = ?""", (cant, cant, kid, hid))
         direccion, msj = "A_STOCK", "Pasada de la caja al stock del pañol."
     else:  # baja
-        c.execute("""UPDATE caja_items SET dotacion = MAX(dotacion - ?, 0), actual = actual - ?
+        c.execute("""UPDATE caja_items SET dotacion = GREATEST(dotacion - ?, 0), actual = actual - ?
                      WHERE caja_id = ? AND herramienta_id = ?""", (cant, cant, kid, hid))
         direccion, msj = "BAJA", "Dada de baja de la caja."
     c.execute("""INSERT INTO transferencias (fecha, caja_id, herramienta_id, cantidad, direccion, observacion)
@@ -553,6 +572,73 @@ def caja_transferir(kid):
               (hoy, kid, hid, cant, direccion, request.form.get("observacion", "").strip() or None))
     c.commit()
     flash(f"{msj} ({cant} × [{hta['codigo']}] {hta['nombre']})", "ok")
+    return redirect(url_for("caja", kid=kid))
+
+
+@app.route("/cajas/<int:kid>/agregar-lote", methods=["POST"])
+def caja_agregar_lote(kid):
+    """Agrega varias herramientas a la caja en una sola operacion (transaccional):
+    si alguna linea no valida, no se agrega ninguna."""
+    import json as _json
+    c = db()
+    if estado_caja(c, kid)["en_campo"]:
+        flash("La caja está en el campo. Registrá el retorno para modificar su contenido.", "error")
+        return redirect(url_for("caja", kid=kid))
+    try:
+        items = _json.loads(request.form.get("items_json", "[]"))
+    except ValueError:
+        items = []
+    if not items:
+        flash("La lista está vacía: agregá al menos una herramienta.", "error")
+        return redirect(url_for("caja", kid=kid))
+
+    errores, lineas = [], []
+    delta_stock = {}   # validacion acumulada de lo que sale del stock
+    for i, it in enumerate(items, 1):
+        hid = it.get("herramienta_id")
+        accion = it.get("accion")
+        cant = it.get("cantidad")
+        if accion not in ("agregar_stock", "agregar_alta") or not isinstance(cant, int) or cant < 1:
+            errores.append(f"Línea {i}: datos inválidos.")
+            continue
+        hta = c.execute("SELECT id, codigo, nombre, cantidad FROM herramientas WHERE id=?",
+                        (hid,)).fetchone()
+        if not hta:
+            errores.append(f"Línea {i}: herramienta inexistente.")
+            continue
+        if accion == "agregar_stock":
+            pend = c.execute(f"SELECT pendiente FROM ({SALDO_HTA}) WHERE herramienta_id=?",
+                             (hid,)).fetchone()
+            disp = hta["cantidad"] - (pend["pendiente"] if pend else 0) - delta_stock.get(hid, 0)
+            if cant > disp:
+                errores.append(f"Línea {i} — [{hta['codigo']}] {hta['nombre']}: "
+                               f"hay {max(disp, 0)} disponible(s) en el pañol.")
+            delta_stock[hid] = delta_stock.get(hid, 0) + cant
+        lineas.append({"hid": hid, "cant": cant, "accion": accion,
+                       "codigo": hta["codigo"], "nombre": hta["nombre"]})
+
+    if errores:
+        flash("No se agregó nada. " + " ".join(errores), "error")
+        return redirect(url_for("caja", kid=kid))
+
+    hoy = date.today().isoformat()
+    for ln in lineas:
+        if not c.execute("SELECT 1 FROM caja_items WHERE caja_id=? AND herramienta_id=?",
+                         (kid, ln["hid"])).fetchone():
+            c.execute("INSERT INTO caja_items (caja_id, herramienta_id, dotacion, actual) VALUES (?,?,0,0)",
+                      (kid, ln["hid"]))
+        if ln["accion"] == "agregar_stock":
+            c.execute("UPDATE herramientas SET cantidad = cantidad - ? WHERE id = ?",
+                      (ln["cant"], ln["hid"]))
+        c.execute("""UPDATE caja_items SET dotacion = dotacion + ?, actual = actual + ?
+                     WHERE caja_id = ? AND herramienta_id = ?""",
+                  (ln["cant"], ln["cant"], kid, ln["hid"]))
+        c.execute("""INSERT INTO transferencias (fecha, caja_id, herramienta_id, cantidad, direccion)
+                     VALUES (?,?,?,?,?)""",
+                  (hoy, kid, ln["hid"], ln["cant"],
+                   "DESDE_STOCK" if ln["accion"] == "agregar_stock" else "ALTA"))
+    c.commit()
+    flash(f"Se agregaron {len(lineas)} herramienta(s) a la caja.", "ok")
     return redirect(url_for("caja", kid=kid))
 
 
@@ -659,30 +745,8 @@ def caja_evento(kid, tipo):
 
 @app.route("/herramientas/<int:hid>/editar", methods=["GET", "POST"])
 def herramienta_editar(hid):
-    c = db()
-    h = c.execute("SELECT * FROM herramientas WHERE id = ?", (hid,)).fetchone()
-    if not h:
-        return redirect(url_for("herramientas"))
-    if request.method == "POST":
-        mod = request.form.get("modulo", "").strip() or None
-        est = request.form.get("estante", "").strip() or None
-        try:
-            c.execute("""UPDATE herramientas SET codigo=?, nombre=?, detalle=?, cantidad=?,
-                         modulo=?, estante=?, ubicacion=?, activo=? WHERE id=?""",
-                      (request.form["codigo"].strip(), request.form["nombre"].strip(),
-                       request.form.get("detalle", "").strip() or None,
-                       request.form.get("cantidad", type=int) or 0,
-                       mod, est, ubicacion_texto(mod, est),
-                       1 if request.form.get("activo") else 0, hid))
-            c.commit()
-            flash("Herramienta actualizada.", "ok")
-            return redirect(url_for("herramienta", hid=hid))
-        except psycopg.errors.UniqueViolation:
-            c.rollback()
-            flash("Ya existe otra herramienta con ese código.", "error")
-    gondolas = c.execute("SELECT * FROM gondolas WHERE activo=1 ORDER BY nombre").fetchall()
-    estantes = c.execute("SELECT * FROM estantes WHERE activo=1 ORDER BY nombre").fetchall()
-    return render_template("herramienta_editar.html", h=h, gondolas=gondolas, estantes=estantes)
+    # editor unico: el formulario de Maestros (soporta ubicaciones multiples)
+    return redirect(url_for("maestros", tab="herramientas", editar=hid))
 
 
 # ---------------------------------------------------------------- maestros
@@ -699,17 +763,42 @@ def maestros():
                 nombre = request.form["nombre"].strip()
                 detalle = request.form.get("detalle", "").strip() or None
                 cantidad = request.form.get("cantidad", type=int) or 0
-                mod = request.form.get("modulo", "").strip() or None
-                est = request.form.get("estante", "").strip() or None
-                ubic = ubicacion_texto(mod, est)   # se arma sola desde gondola + estante
+                # ubicaciones multiples: filas paralelas ubic_gondola/ubic_estante/ubic_cantidad
+                ubics = []
+                for g_, e_, n_ in zip(request.form.getlist("ubic_gondola"),
+                                      request.form.getlist("ubic_estante"),
+                                      request.form.getlist("ubic_cantidad")):
+                    g_, e_ = g_.strip(), e_.strip()
+                    try:
+                        n_ = max(int(n_ or 0), 0)
+                    except ValueError:
+                        n_ = 0
+                    if g_ or e_:
+                        ubics.append((g_ or None, e_ or None, n_))
+                # columnas legacy: primera ubicacion; texto visible: todas
+                mod = ubics[0][0] if ubics else None
+                est = ubics[0][1] if ubics else None
+                partes = []
+                for g_, e_, n_ in ubics:
+                    t = ubicacion_texto(g_, e_)
+                    if len(ubics) > 1 and n_:
+                        t += f" ×{n_}"
+                    partes.append(t)
+                ubic = " · ".join(partes) or None
                 if rid:
                     c.execute("""UPDATE herramientas SET codigo=?, nombre=?, detalle=?, cantidad=?,
                                  modulo=?, estante=?, ubicacion=? WHERE id=?""",
                               (codigo, nombre, detalle, cantidad, mod, est, ubic, rid))
+                    hid_dest = rid
                 else:
-                    c.execute("""INSERT INTO herramientas (codigo, nombre, detalle, cantidad, modulo, estante, ubicacion)
-                                 VALUES (?,?,?,?,?,?,?)""",
-                              (codigo, nombre, detalle, cantidad, mod, est, ubic))
+                    hid_dest = c.execute(
+                        """INSERT INTO herramientas (codigo, nombre, detalle, cantidad, modulo, estante, ubicacion)
+                           VALUES (?,?,?,?,?,?,?) RETURNING id""",
+                        (codigo, nombre, detalle, cantidad, mod, est, ubic)).fetchone()[0]
+                c.execute("DELETE FROM ubicaciones WHERE herramienta_id=?", (hid_dest,))
+                for g_, e_, n_ in ubics:
+                    c.execute("""INSERT INTO ubicaciones (herramienta_id, gondola, estante, cantidad)
+                                 VALUES (?,?,?,?)""", (hid_dest, g_, e_, n_))
             elif que in ("empleado", "almacenista"):
                 tabla = "empleados" if que == "empleado" else "almacenistas"
                 nombre = request.form["nombre"].strip()
@@ -744,8 +833,18 @@ def maestros():
     tabla_de_tab = {"herramientas": "herramientas", "trabajadores": "empleados",
                     "almacenistas": "almacenistas", "condiciones": "condiciones",
                     "gondolas": "gondolas", "estantes": "estantes"}
+    ubicaciones_edit = []
     if edit_id and tab in tabla_de_tab:
         editando = c.execute(f"SELECT * FROM {tabla_de_tab[tab]} WHERE id=?", (edit_id,)).fetchone()
+        if editando and tab == "herramientas":
+            ubicaciones_edit = c.execute(
+                "SELECT gondola, estante, cantidad FROM ubicaciones WHERE herramienta_id=? ORDER BY id",
+                (edit_id,)).fetchall()
+            if not ubicaciones_edit and (editando["modulo"] or editando["estante"]):
+                # herramienta vieja sin filas de ubicacion: mostrar la legacy
+                ubicaciones_edit = [{"gondola": editando["modulo"],
+                                     "estante": editando["estante"],
+                                     "cantidad": editando["cantidad"]}]
     proximo_codigo = (c.execute(
         "SELECT MAX(CASE WHEN codigo ~ '^[0-9]+$' THEN codigo::int END) FROM herramientas"
     ).fetchone()[0] or 0) + 1
@@ -778,6 +877,7 @@ def maestros():
         "estantes": {e["id"] for e in estantes if e["nombre"] in ests},
     }
     return render_template("maestros.html", tab=tab, editando=editando,
+                           ubicaciones_edit=ubicaciones_edit,
                            proximo_codigo=proximo_codigo, herramientas=herramientas,
                            empleados=empleados, almacenistas=almacenistas,
                            condiciones=condiciones, gondolas=gondolas, estantes=estantes,
