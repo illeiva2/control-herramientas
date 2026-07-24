@@ -2,18 +2,30 @@
 function combobox({ input, hidden, panel, url, render, onPick }) {
   let items = [], idx = -1, timer;
 
-  function cerrar() { panel.classList.remove("abierta"); idx = -1; }
+  // el autofill del navegador tapa las sugerencias; ARIA minimo del patron combobox
+  input.setAttribute("autocomplete", "off");
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-expanded", "false");
+  input.setAttribute("aria-autocomplete", "list");
+  panel.setAttribute("role", "listbox");
+
+  function cerrar() { panel.classList.remove("abierta"); idx = -1; input.setAttribute("aria-expanded", "false"); }
 
   function pintar() {
     panel.innerHTML = "";
     items.forEach((it, i) => {
       const div = document.createElement("div");
       div.className = "item" + (i === idx ? " activo" : "");
+      div.setAttribute("role", "option");
+      div.setAttribute("aria-selected", i === idx ? "true" : "false");
       div.innerHTML = render(it);
       div.addEventListener("mousedown", (e) => { e.preventDefault(); elegir(i); });
       panel.appendChild(div);
     });
     panel.classList.toggle("abierta", items.length > 0);
+    input.setAttribute("aria-expanded", items.length > 0 ? "true" : "false");
+    const act = panel.children[idx];
+    if (act) act.scrollIntoView({ block: "nearest" });
   }
 
   function elegir(i) {
@@ -448,7 +460,11 @@ document.addEventListener("DOMContentLoaded", () => {
     panel: $("empleado-sug"),
     url: "/api/empleados",
     render: (it) => `<div>${it.nombre}</div><div class="sub">DNI ${it.dni || "—"}</div>`,
-    onPick: cargarPendientes,
+    onPick: (it) => {
+      $("msg-ok").hidden = true;
+      cargarPendientes();
+      if (it) htaInput.focus();   // seguir de corrido: trabajador -> herramienta
+    },
   });
 
   // alternar entrega/devolucion (para las proximas lineas)
@@ -474,6 +490,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     $("msg-error").hidden = true;
+    $("msg-ok").hidden = true;
     agregarLinea(tipoActual(), htaElegida, cant,
       parseInt(condSelect.value, 10),
       condSelect.options[condSelect.selectedIndex]?.text,
@@ -485,8 +502,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   $("btn-agregar").addEventListener("click", agregarDesdeFormulario);
-  cantidad.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); agregarDesdeFormulario(); }
+  [cantidad, $("observacion"), condSelect].forEach((el) => {
+    if (el) el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); agregarDesdeFormulario(); }
+    });
   });
 
   // ------- registrar todo -------
@@ -520,6 +539,7 @@ document.addEventListener("DOMContentLoaded", () => {
         mensaje(true, res.mensaje);
         cargarPendientes();   // refresca los chips
         empInput.focus();
+        empInput.select();    // el proximo tipeo pisa el nombre anterior
       } else {
         mensaje(false, "<b>No se registró nada.</b><br>" + res.errores.join("<br>"));
         btnRegistrar.disabled = false;
@@ -531,5 +551,259 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // si viene precargado el empleado (query param), buscar pendientes
-  if (empHidden.value) cargarPendientes();
+  if (empHidden.value) {
+    cargarPendientes();
+    htaInput.focus();
+  } else {
+    empInput.focus();
+  }
+});
+
+// ------- devolucion rapida desde el panel de inicio -------
+document.addEventListener("DOMContentLoaded", () => {
+  const seccion = document.getElementById("dev-rapida");
+  const grupos = document.getElementById("dev-grupos");
+  if (!seccion || !grupos) return;
+
+  const condDefecto = parseInt(seccion.dataset.condicionDefecto, 10) || null;
+  let condiciones = [];
+  try { condiciones = JSON.parse(document.getElementById("dev-condiciones").textContent); } catch (_) {}
+
+  const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])));
+
+  function almacenistaActivo() {
+    const hdr = document.getElementById("almacenista-activo");
+    return (hdr && parseInt(hdr.value, 10)) || parseInt(localStorage.getItem("panol-almacenista"), 10) || null;
+  }
+
+  // ---- toast unico con deshacer ----
+  let toastEl = null, toastTimer = null;
+  function toast(html, undoIds) {
+    if (toastEl) toastEl.remove();
+    clearTimeout(toastTimer);
+    toastEl = document.createElement("div");
+    toastEl.className = "toast";
+    toastEl.setAttribute("role", "status");
+    toastEl.innerHTML = html + (undoIds && undoIds.length
+      ? ' <button type="button" class="toast-undo">Deshacer</button>' : "");
+    document.body.appendChild(toastEl);
+    const undoBtn = toastEl.querySelector(".toast-undo");
+    if (undoBtn) {
+      undoBtn.addEventListener("click", async () => {
+        undoBtn.disabled = true;
+        for (const id of undoIds) {
+          try { await fetch("/movimientos/" + id + "/eliminar", { method: "POST" }); } catch (_) {}
+        }
+        location.reload();   // el deshacer es infrecuente: recargar garantiza consistencia total
+      });
+    }
+    toastTimer = setTimeout(() => { if (toastEl) { toastEl.remove(); toastEl = null; } }, 8000);
+  }
+
+  function flashError(msjs) {
+    toast("⚠ " + esc(Array.isArray(msjs) ? msjs.join(" — ") : msjs));
+    if (toastEl) toastEl.classList.add("toast-error");
+  }
+
+  function cardPrestadas(delta) {
+    const el = document.querySelector(".card .num.acc");
+    if (el) el.textContent = Math.max(parseInt(el.textContent, 10) + delta, 0);
+  }
+
+  // ---- registrar devoluciones (una o varias filas de un mismo trabajador) ----
+  async function devolver(empId, lineas, botones) {
+    botones.forEach((b) => { b.disabled = true; });
+    try {
+      const r = await fetch("/api/registrar-lote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empleado_id: empId,
+          almacenista_id: almacenistaActivo(),
+          items: lineas.map((l) => ({
+            tipo: "DEVOLUCION", herramienta_id: l.hta, cantidad: l.cant,
+            condicion_id: l.cond, observacion: l.obs || null,
+          })),
+        }),
+      });
+      const res = await r.json();
+      if (!res.ok) {
+        flashError(res.errores);
+        botones.forEach((b) => { b.disabled = false; });
+        await refrescarGrupo(empId);
+        return false;
+      }
+      const unidades = lineas.reduce((a, l) => a + l.cant, 0);
+      cardPrestadas(-unidades);
+      const detalle = lineas.length === 1
+        ? '<span class="code">' + esc(lineas[0].codigo) + "</span> " + esc(lineas[0].nombre) +
+          " × " + lineas[0].cant + " — " + esc(lineas[0].condNombre)
+        : lineas.length + " herramientas (" + unidades + " unidades)";
+      toast("Devuelto ✓ " + detalle, res.ids || []);
+      await refrescarGrupo(empId);
+      return true;
+    } catch (err) {
+      flashError("Error de conexión: " + err);
+      botones.forEach((b) => { b.disabled = false; });
+      return false;
+    }
+  }
+
+  // ---- refresco dirigido del grupo contra el server ----
+  async function refrescarGrupo(empId) {
+    const grupo = grupos.querySelector('.grupo-dev[data-emp="' + empId + '"]');
+    if (!grupo) return;
+    let data = [];
+    try { data = await (await fetch("/api/pendientes?empleado_id=" + empId)).json(); } catch (_) { return; }
+    const porHta = {};
+    data.forEach((p) => { porHta[p.id] = p.pendiente; });
+    grupo.querySelectorAll(".fila-pend:not(.fp-negativa)").forEach((fila) => {
+      const hta = parseInt(fila.dataset.hta, 10);
+      if (porHta[hta] == null) {
+        fila.classList.add("fp-saliendo");
+        setTimeout(() => fila.remove(), 350);
+      } else {
+        fila.dataset.pend = porHta[hta];
+        const b = fila.querySelector(".fp-cant b");
+        if (b) b.textContent = porHta[hta];
+        const btn = fila.querySelector(".fp-devolver");
+        if (btn) btn.disabled = false;
+        const mas = fila.querySelector(".fp-mas");
+        if (mas) mas.disabled = false;
+      }
+    });
+    // actualizar / ocultar "Devolver todo (N)"
+    const todo = grupo.querySelector(".gd-devolver-todo");
+    if (todo) {
+      const n = data.length;
+      if (n >= 2) { todo.textContent = "⮐ Devolver todo (" + n + ")"; todo.disabled = false; }
+      else todo.remove();
+    }
+    // grupo sin filas -> se va; sin grupos -> estado vacio
+    setTimeout(() => {
+      if (!grupo.querySelector(".fila-pend")) {
+        grupo.remove();
+        if (!grupos.querySelector(".grupo-dev")) {
+          grupos.insertAdjacentHTML("afterend", '<p class="vacio">No hay herramientas sin devolver.</p>');
+          const f = seccion.querySelector(".dev-filtro");
+          if (f) f.remove();
+          grupos.remove();
+        }
+      }
+    }, 400);
+  }
+
+  // ---- popover inline para parciales / condicion ----
+  let popAbierto = null;
+  function cerrarPop() {
+    if (popAbierto) {
+      const origen = popAbierto._origen;
+      popAbierto.remove();
+      popAbierto = null;
+      if (origen && document.contains(origen)) origen.focus();
+    }
+  }
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarPop(); });
+
+  function abrirPop(fila, botonOrigen) {
+    cerrarPop();
+    const pend = parseInt(fila.dataset.pend, 10);
+    const pop = document.createElement("div");
+    pop.className = "pop-dev";
+    pop.innerHTML =
+      '<div class="pd-fila"><span class="pd-lbl">Cantidad</span>' +
+        '<span class="stepper"><button type="button" data-a="dec">−</button>' +
+        '<span class="val">' + pend + '</span><button type="button" data-a="inc">+</button></span>' +
+        '<span class="nota">de ' + pend + ' pendiente(s)</span></div>' +
+      '<div class="pd-fila"><span class="pd-lbl">Condición</span><span class="chips">' +
+        condiciones.map((c) =>
+          '<button type="button" class="chip pd-cond ' + (c.id === condDefecto ? "on" : "") +
+          '" data-id="' + c.id + '">' + esc(c.nombre) + "</button>"
+        ).join("") + "</span></div>" +
+      '<div class="pd-fila"><input type="text" class="pd-obs" maxlength="120" placeholder="Observación (ej.: mango rajado)"></div>' +
+      '<div class="pd-fila pd-pie"><button type="button" class="btn mini sec pd-cancelar">Cancelar</button>' +
+        '<button type="button" class="btn mini pd-ok">Registrar devolución</button></div>';
+    fila.insertAdjacentElement("afterend", pop);
+    pop._origen = botonOrigen;
+    popAbierto = pop;
+
+    let cant = pend;
+    const val = pop.querySelector(".stepper .val");
+    pop.querySelector("[data-a=dec]").addEventListener("click", () => {
+      if (cant > 1) { cant--; val.textContent = cant; }
+    });
+    pop.querySelector("[data-a=inc]").addEventListener("click", () => {
+      if (cant < pend) { cant++; val.textContent = cant; }
+    });
+    pop.querySelectorAll(".pd-cond").forEach((ch) => ch.addEventListener("click", () => {
+      pop.querySelectorAll(".pd-cond").forEach((x) => x.classList.remove("on"));
+      ch.classList.add("on");
+    }));
+    pop.querySelector(".pd-cancelar").addEventListener("click", cerrarPop);
+    pop.querySelector(".pd-ok").addEventListener("click", async () => {
+      const cond = pop.querySelector(".pd-cond.on");
+      const grupo = fila.closest(".grupo-dev");
+      const ok = await devolver(parseInt(grupo.dataset.emp, 10), [{
+        hta: parseInt(fila.dataset.hta, 10), cant: cant,
+        cond: cond ? parseInt(cond.dataset.id, 10) : condDefecto,
+        condNombre: cond ? cond.textContent : "Buena",
+        obs: pop.querySelector(".pd-obs").value.trim(),
+        codigo: fila.dataset.codigo, nombre: fila.dataset.nombre,
+      }], [pop.querySelector(".pd-ok")]);
+      if (ok) cerrarPop();
+    });
+    pop.querySelector(".pd-ok").focus();
+  }
+
+  // ---- delegacion de clicks ----
+  grupos.addEventListener("click", (e) => {
+    const fila = e.target.closest(".fila-pend");
+    const grupo = e.target.closest(".grupo-dev");
+    const condN = condiciones.find((c) => c.id === condDefecto);
+    if (e.target.closest(".fp-devolver") && fila && grupo) {
+      cerrarPop();
+      devolver(parseInt(grupo.dataset.emp, 10), [{
+        hta: parseInt(fila.dataset.hta, 10),
+        cant: parseInt(fila.dataset.pend, 10),
+        cond: condDefecto, condNombre: condN ? condN.nombre : "Buena",
+        codigo: fila.dataset.codigo, nombre: fila.dataset.nombre,
+      }], [e.target.closest(".fp-devolver")]);
+    } else if (e.target.closest(".fp-mas") && fila) {
+      if (popAbierto && popAbierto.previousElementSibling === fila) cerrarPop();
+      else abrirPop(fila, e.target.closest(".fp-mas"));
+    } else if (e.target.closest(".gd-devolver-todo") && grupo) {
+      cerrarPop();
+      const lineas = [].slice.call(grupo.querySelectorAll(".fila-pend:not(.fp-negativa)"))
+        .filter((f) => parseInt(f.dataset.pend, 10) > 0)
+        .map((f) => ({
+          hta: parseInt(f.dataset.hta, 10), cant: parseInt(f.dataset.pend, 10),
+          cond: condDefecto, condNombre: condN ? condN.nombre : "Buena",
+          codigo: f.dataset.codigo, nombre: f.dataset.nombre,
+        }));
+      const botones = [e.target.closest(".gd-devolver-todo")]
+        .concat([].slice.call(grupo.querySelectorAll(".fp-devolver, .fp-mas")));
+      devolver(parseInt(grupo.dataset.emp, 10), lineas, botones);
+    }
+  });
+
+  // ---- filtro en vivo ----
+  const buscar = document.getElementById("dev-buscar");
+  if (buscar) buscar.addEventListener("input", () => {
+    const q = normalizar(buscar.value.trim());
+    let visibles = 0;
+    grupos.querySelectorAll(".grupo-dev").forEach((g) => {
+      const matchGrupo = !q || normalizar(g.dataset.buscar).includes(q);
+      let filasVisibles = 0;
+      g.querySelectorAll(".fila-pend").forEach((f) => {
+        const pasa = matchGrupo || normalizar(f.dataset.buscar).includes(q);
+        f.hidden = !pasa;
+        if (pasa) filasVisibles++;
+      });
+      g.hidden = filasVisibles === 0;
+      if (!g.hidden) visibles++;
+    });
+    const sin = document.getElementById("dev-sin-match");
+    if (sin) sin.hidden = visibles > 0;
+  });
 });

@@ -48,30 +48,67 @@
 </div>
 
 <div class="dos-col">
-  <section class="seccion-card">
+  <section class="seccion-card" id="dev-rapida"
+           data-condicion-defecto="{{ condiciones[0].id if condiciones }}">
+    <script type="application/json" id="dev-condiciones">[
+      {%- for c in condiciones %}{"id": {{ c.id }}, "nombre": "{{ c.nombre }}"}{{ "," if not loop.last }}{% endfor -%}
+    ]</script>
     <div class="sc-head">
       <h2>Pendientes de devolución</h2>
       {% if atrasados %}<span class="badge-bad">{{ atrasados }} atrasadas</span>{% endif %}
     </div>
-    {% if pendientes %}
-    <table>
-      <thead><tr><th>Trabajador</th><th>Herramienta</th><th class="centro">Cant.</th><th class="der">Estado</th></tr></thead>
-      <tbody>
-      {% for p in pendientes %}
-        <tr>
-          <td style="font-weight:600"><a href="{{ url_for('empleado', eid=p.empleado_id) }}">{{ p.empleado }}</a></td>
-          <td><span class="code">{{ p.codigo }}</span><span style="display:block">{{ p.herramienta }}</span></td>
-          <td class="centro num-cell {% if p.pendiente < 0 %}rojo{% endif %}">{{ p.pendiente }}</td>
-          <td class="der">
-            {% if p.dias is not none and p.dias > 1 and p.pendiente > 0 %}
+    {% if grupos_pend %}
+    <div class="dev-filtro">
+      <input type="search" id="dev-buscar" placeholder="Filtrar por trabajador o herramienta…"
+             autocomplete="off" aria-label="Filtrar pendientes">
+    </div>
+    <div id="dev-grupos">
+      {% for g in grupos_pend %}
+      {% set devolvibles = g["items"] | selectattr("pendiente", "gt", 0) | list %}
+      <div class="grupo-dev" data-emp="{{ g.empleado_id }}" data-buscar="{{ g.empleado|lower }}">
+        <div class="gd-head">
+          <div class="gd-nombre">
+            <a href="{{ url_for('empleado', eid=g.empleado_id) }}">{{ g.empleado }}</a>
+            {% if g.dias_max > 1 %}<span class="badge-bad">hace {{ g.dias_max }} días</span>{% endif %}
+          </div>
+          <div class="gd-acciones">
+            {% if devolvibles|length >= 2 %}
+            <button type="button" class="btn mini gd-devolver-todo">⮐ Devolver todo ({{ devolvibles|length }})</button>
+            {% endif %}
+            <a class="gd-abrir nota" href="{{ url_for('registrar', empleado_id=g.empleado_id, tipo='DEVOLUCION') }}"
+               title="Para casos complejos: mezclar con entregas, fecha retroactiva, forzar">Abrir en Registrar</a>
+          </div>
+        </div>
+        {% for p in g["items"] %}
+        <div class="fila-pend {% if p.pendiente <= 0 %}fp-negativa{% endif %}"
+             data-hta="{{ p.herramienta_id }}" data-pend="{{ p.pendiente }}"
+             data-codigo="{{ p.codigo }}" data-nombre="{{ p.herramienta }}"
+             data-buscar="{{ (p.codigo ~ ' ' ~ p.herramienta)|lower }}">
+          <div class="fp-txt">
+            <span class="code">{{ p.codigo }}</span> {{ p.herramienta }}
+            <span class="fp-cant">× <b>{{ p.pendiente }}</b></span>
+            {% if p.pendiente <= 0 %}
+              <span class="badge-bad" title="El historial registra más devoluciones que entregas de esta herramienta para este trabajador. Corregilo desde Historial.">devolvió de más — revisar carga</span>
+            {% elif p.dias is not none and p.dias > 1 %}
               <span class="badge-bad">hace {{ p.dias }} días</span>
-            {% elif p.ult_entrega %}<span class="nota">{{ p.ult_entrega }}</span>{% endif %}
-          </td>
-        </tr>
+            {% elif p.ult_entrega %}
+              <span class="nota">{{ p.ult_entrega|fecha }}</span>
+            {% endif %}
+          </div>
+          {% if p.pendiente > 0 %}
+          <div class="fp-acciones">
+            <button type="button" class="btn mini fp-devolver" title="Registrar la devolución completa en Buena condición">⮐ Devolver</button>
+            <button type="button" class="btn mini sec fp-mas" aria-haspopup="true"
+                    title="Devolución parcial o con otra condición">⋯</button>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
       {% endfor %}
-      </tbody>
-    </table>
-    {% else %}<p class="vacio">No hay herramientas sin devolver. 👌</p>{% endif %}
+    </div>
+    <p class="vacio" id="dev-sin-match" hidden>Nada coincide con el filtro.</p>
+    {% else %}<p class="vacio">No hay herramientas sin devolver.</p>{% endif %}
   </section>
 
   <section class="seccion-card">
@@ -89,9 +126,9 @@
           </span>
           <div class="txt">
             <div class="t1"><span class="code">{{ m.codigo }}</span> {{ m.herramienta }}</div>
-            <div class="t2">{{ m.empleado }} · {{ m.fecha }}</div>
+            <div class="t2">{{ m.empleado }} · {{ m.fecha|fecha }}{% if m.observacion %} · {{ m.observacion }}{% endif %}</div>
           </div>
-          <span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ m.tipo }} {{ m.cantidad }}</span>
+          <span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ 'Entrega' if m.tipo == 'ENTREGA' else 'Devolución' }}{% if m.cantidad > 1 %} ×{{ m.cantidad }}{% endif %}</span>
         </div>
       {% endfor %}
     </div>

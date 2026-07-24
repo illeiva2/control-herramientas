@@ -82,6 +82,21 @@ def db():
     return g.db
 
 
+@app.template_filter("fecha")
+def filtro_fecha(v):
+    """'YYYY-MM-DD' -> 'hoy' / 'ayer' / 'dd/mm/aa' (los datos guardan ISO)."""
+    try:
+        f = date.fromisoformat(str(v)[:10])
+    except (TypeError, ValueError):
+        return v or ""
+    delta = (date.today() - f).days
+    if delta == 0:
+        return "hoy"
+    if delta == 1:
+        return "ayer"
+    return f.strftime("%d/%m/%y")
+
+
 @app.context_processor
 def inyectar_globales():
     try:
@@ -158,7 +173,7 @@ def index():
     }
     rows = c.execute(f"""
         SELECT e.id AS empleado_id, e.nombre AS empleado,
-               h.codigo, h.nombre AS herramienta, s.pendiente,
+               h.id AS herramienta_id, h.codigo, h.nombre AS herramienta, s.pendiente,
                (SELECT MAX(m.fecha) FROM movimientos m
                  WHERE m.empleado_id = s.empleado_id
                    AND m.herramienta_id = s.herramienta_id
@@ -177,9 +192,22 @@ def index():
         except (TypeError, ValueError):
             p["dias"] = None
         pendientes.append(p)
-    # los mas atrasados primero
-    pendientes.sort(key=lambda p: -(p["dias"] or 0))
     atrasados = sum(1 for p in pendientes if p["pendiente"] > 0 and (p["dias"] or 0) > 1)
+
+    # grupos por trabajador para la devolucion rapida, peor atraso primero
+    grupos_pend = []
+    for p in sorted(pendientes, key=lambda x: x["empleado"]):
+        if not grupos_pend or grupos_pend[-1]["empleado_id"] != p["empleado_id"]:
+            grupos_pend.append({"empleado_id": p["empleado_id"], "empleado": p["empleado"],
+                                "items": [], "dias_max": 0, "unidades": 0})
+        g = grupos_pend[-1]
+        g["items"].append(p)
+        g["dias_max"] = max(g["dias_max"], p["dias"] or 0)
+        if p["pendiente"] > 0:
+            g["unidades"] += p["pendiente"]
+    grupos_pend.sort(key=lambda g: -g["dias_max"])
+
+    condiciones = c.execute("SELECT * FROM condiciones ORDER BY nombre").fetchall()
     ultimos = c.execute("""
         SELECT m.*, e.nombre AS empleado, h.codigo, h.nombre AS herramienta
         FROM movimientos m
@@ -187,8 +215,8 @@ def index():
         JOIN herramientas h ON h.id = m.herramienta_id
         ORDER BY m.id DESC LIMIT 10
     """).fetchall()
-    return render_template("index.html", stats=stats, pendientes=pendientes,
-                           atrasados=atrasados, ultimos=ultimos)
+    return render_template("index.html", stats=stats, grupos_pend=grupos_pend,
+                           atrasados=atrasados, ultimos=ultimos, condiciones=condiciones)
 
 
 @app.route("/registrar")
@@ -280,7 +308,7 @@ def herramientas():
 
     modulos = [(g["modulo"], g["nombre"]) for g in grupos]
     return render_template("herramientas.html", grupos=grupos, modulos=modulos,
-                           total=len(base_rows), q=request.args.get("q", "").strip())
+                           total=len(rows), q=request.args.get("q", "").strip())
 
 
 @app.route("/herramientas/<int:hid>")
@@ -1009,14 +1037,15 @@ def api_registrar_lote():
     if errores:
         return jsonify({"ok": False, "errores": errores})
 
+    ids = []
     try:
         for ln in lineas:
-            c.execute("""
+            ids.append(c.execute("""
                 INSERT INTO movimientos (tipo, fecha, empleado_id, herramienta_id, cantidad,
                                          condicion_id, almacenista_id, observacion)
-                VALUES (?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?) RETURNING id
             """, (ln["tipo"], fecha, empleado_id, ln["herramienta_id"], ln["cantidad"],
-                  ln["condicion_id"], almacenista_id, ln["observacion"]))
+                  ln["condicion_id"], almacenista_id, ln["observacion"])).fetchone()[0])
         c.commit()
     except psycopg.Error as e:
         c.rollback()
@@ -1029,7 +1058,8 @@ def api_registrar_lote():
         partes.append(f"{ent} entrega(s)")
     if dev:
         partes.append(f"{dev} devolución(es)")
-    return jsonify({"ok": True, "n": len(lineas), "mensaje": "Registrado: " + " y ".join(partes) + "."})
+    return jsonify({"ok": True, "n": len(lineas), "ids": ids,
+                    "mensaje": "Registrado: " + " y ".join(partes) + "."})
 
 
 # ---------------------------------------------------------------- API autocompletar

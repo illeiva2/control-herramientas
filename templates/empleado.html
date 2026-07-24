@@ -44,7 +44,7 @@
   <tbody>
   {% for m in historial %}
     <tr>
-      <td class="num-cell nota">{{ m.fecha }}</td>
+      <td class="num-cell nota">{{ m.fecha|fecha }}</td>
       <td><span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ m.tipo }}</span></td>
       <td><span class="code">{{ m.codigo }}</span> {{ m.herramienta }}</td>
       <td class="centro num-cell">{{ m.cantidad }}</td>

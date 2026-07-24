@@ -21,8 +21,8 @@
     <option value="ENTREGA" {% if tipo == 'ENTREGA' %}selected{% endif %}>Entregas</option>
     <option value="DEVOLUCION" {% if tipo == 'DEVOLUCION' %}selected{% endif %}>Devoluciones</option>
   </select>
-  <input type="date" name="desde" value="{{ desde }}" title="Desde">
-  <input type="date" name="hasta" value="{{ hasta }}" title="Hasta">
+  <label class="nota" for="f-desde">Desde</label><input type="date" id="f-desde" name="desde" value="{{ desde }}">
+  <label class="nota" for="f-hasta">Hasta</label><input type="date" id="f-hasta" name="hasta" value="{{ hasta }}">
   <button class="btn">Filtrar</button>
 </form>
 <p class="nota">{{ rows|length }} movimiento(s){% if rows|length == 500 %} (mostrando los últimos 500){% endif %}</p>
@@ -32,12 +32,13 @@
   <thead><tr><th>Fecha</th><th>Tipo</th><th>Trabajador</th><th>Herramienta</th>
              <th class="centro">Cant.</th><th>Condición</th><th>Almacenista</th><th class="der"></th></tr></thead>
   <tbody>
+  {% if not rows %}<tr><td colspan="8" class="nota" style="text-align:center;padding:26px">Ningún movimiento coincide con el filtro.</td></tr>{% endif %}
   {% for m in rows %}
     <tr>
-      <td class="num-cell nota">{{ m.fecha }}</td>
-      <td><span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ m.tipo }}</span></td>
+      <td class="num-cell nota" title="{{ m.fecha }}">{{ m.fecha|fecha }}</td>
+      <td><span class="tag {{ 'ent' if m.tipo == 'ENTREGA' else 'dev' }}">{{ 'Entrega' if m.tipo == 'ENTREGA' else 'Devolución' }}</span></td>
       <td>{{ m.empleado }}</td>
-      <td><span class="code">{{ m.codigo }}</span> {{ m.herramienta }}</td>
+      <td><span class="code">{{ m.codigo }}</span> {{ m.herramienta }}{% if m.observacion %}<div class="detalle">{{ m.observacion }}</div>{% endif %}</td>
       <td class="centro num-cell">{{ m.cantidad }}</td>
       <td>{{ m.condicion or '' }}</td>
       <td>{{ m.almacenista or '' }}</td>
