@@ -462,19 +462,64 @@ document.addEventListener("DOMContentLoaded", () => {
     render: (it) => `<div>${it.nombre}</div><div class="sub">DNI ${it.dni || "—"}</div>`,
     onPick: (it) => {
       $("msg-ok").hidden = true;
+      document.querySelectorAll(".rail-emp").forEach((x) =>
+        x.classList.toggle("on", !!it && x.dataset.id === String(it.id)));
+      const bc = $("empleado-clear");
+      if (bc) bc.hidden = !empInput.value;
       cargarPendientes();
       if (it) htaInput.focus();   // seguir de corrido: trabajador -> herramienta
     },
   });
 
   // alternar entrega/devolucion (para las proximas lineas)
+  function actualizarRail() {
+    const dev = tipoActual() === "DEVOLUCION";
+    const rec = $("rail-recientes"), deu = $("rail-deudores"), tit = $("rail-lista-titulo");
+    if (rec) rec.hidden = dev;
+    if (deu) deu.hidden = !dev;
+    if (tit) tit.textContent = dev ? "Con herramientas por devolver" : "Últimos atendidos";
+  }
   form.querySelectorAll("input[name=tipo]").forEach((radio) => {
     radio.addEventListener("change", () => {
       form.querySelectorAll(".tab").forEach((t) => t.classList.remove("on"));
       radio.closest(".tab").classList.add("on");
       form.querySelector(".solo-devolucion").hidden = tipoActual() !== "DEVOLUCION";
+      actualizarRail();
     });
   });
+  actualizarRail();
+
+  // clic en un trabajador del rail: igual que elegirlo en el buscador
+  document.querySelectorAll(".rail-emp").forEach((b) => {
+    b.addEventListener("click", () => {
+      $("msg-ok").hidden = true;
+      empHidden.value = b.dataset.id;
+      empInput.value = b.dataset.nombre;
+      document.querySelectorAll(".rail-emp").forEach((x) => x.classList.remove("on"));
+      b.classList.add("on");
+      actualizarClear();
+      cargarPendientes();
+      htaInput.focus();
+    });
+  });
+
+  // boton de borrar el trabajador para cargar otro
+  const btnClear = $("empleado-clear");
+  function actualizarClear() {
+    if (btnClear) btnClear.hidden = !empInput.value;
+  }
+  if (btnClear) {
+    btnClear.addEventListener("click", () => {
+      empInput.value = ""; empHidden.value = "";
+      document.querySelectorAll(".rail-emp").forEach((x) => x.classList.remove("on"));
+      $("pendientes-emp").hidden = true;
+      actualizarClear();
+      pintarResumen();
+      empInput.focus();
+    });
+    empInput.addEventListener("input", actualizarClear);
+    actualizarClear();
+  }
 
   // ------- agregar linea -------
   function agregarDesdeFormulario() {
@@ -673,6 +718,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (mas) mas.disabled = false;
       }
     });
+    // contador de items del encabezado y seleccion
+    const itemsN = grupo.querySelector(".gd-items-n");
+    if (itemsN) itemsN.textContent = grupo.querySelectorAll(".fila-pend:not(.fp-saliendo)").length + " ítem(s)";
+    grupo.querySelectorAll(".fp-check").forEach((ch) => { ch.checked = false; });
+    actualizarSeleccion(grupo);
     // actualizar / ocultar "Devolver todo (N)"
     const todo = grupo.querySelector(".gd-devolver-todo");
     if (todo) {
@@ -772,6 +822,20 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (e.target.closest(".fp-mas") && fila) {
       if (popAbierto && popAbierto.previousElementSibling === fila) cerrarPop();
       else abrirPop(fila, e.target.closest(".fp-mas"));
+    } else if (e.target.closest(".gd-devolver-sel") && grupo) {
+      cerrarPop();
+      const lineas = [].slice.call(grupo.querySelectorAll(".fp-check:checked"))
+        .map((ch) => ch.closest(".fila-pend"))
+        .filter((f) => parseInt(f.dataset.pend, 10) > 0)
+        .map((f) => ({
+          hta: parseInt(f.dataset.hta, 10), cant: parseInt(f.dataset.pend, 10),
+          cond: condDefecto, condNombre: condN ? condN.nombre : "Buena",
+          codigo: f.dataset.codigo, nombre: f.dataset.nombre,
+        }));
+      if (!lineas.length) return;
+      const botones = [e.target.closest(".gd-devolver-sel")]
+        .concat([].slice.call(grupo.querySelectorAll(".fp-devolver, .fp-mas, .gd-devolver-todo")));
+      devolver(parseInt(grupo.dataset.emp, 10), lineas, botones);
     } else if (e.target.closest(".gd-devolver-todo") && grupo) {
       cerrarPop();
       const lineas = [].slice.call(grupo.querySelectorAll(".fila-pend:not(.fp-negativa)"))
@@ -785,6 +849,32 @@ document.addEventListener("DOMContentLoaded", () => {
         .concat([].slice.call(grupo.querySelectorAll(".fp-devolver, .fp-mas")));
       devolver(parseInt(grupo.dataset.emp, 10), lineas, botones);
     }
+  });
+
+  // ---- seleccion multiple por grupo ----
+  function actualizarSeleccion(grupo) {
+    const btn = grupo.querySelector(".gd-devolver-sel");
+    if (!btn) return;
+    const n = grupo.querySelectorAll(".fp-check:checked").length;
+    btn.hidden = n === 0;
+    const span = btn.querySelector(".n");
+    if (span) span.textContent = n;
+  }
+  grupos.addEventListener("change", (e) => {
+    if (e.target.classList.contains("fp-check")) {
+      actualizarSeleccion(e.target.closest(".grupo-dev"));
+    }
+  });
+
+  // ---- colapsar / expandir por trabajador ----
+  grupos.addEventListener("click", (e) => {
+    const tg = e.target.closest(".gd-toggle");
+    if (!tg) return;
+    const grupo = tg.closest(".grupo-dev");
+    const colapsado = grupo.classList.toggle("gd-colapsado");
+    tg.textContent = colapsado ? "▸" : "▾";
+    tg.setAttribute("aria-expanded", colapsado ? "false" : "true");
+    if (colapsado) cerrarPop();
   });
 
   // ---- filtro en vivo ----
@@ -802,6 +892,11 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       g.hidden = filasVisibles === 0;
       if (!g.hidden) visibles++;
+      if (q && !g.hidden && g.classList.contains("gd-colapsado")) {
+        g.classList.remove("gd-colapsado");
+        const t = g.querySelector(".gd-toggle");
+        if (t) { t.textContent = "▾"; t.setAttribute("aria-expanded", "true"); }
+      }
     });
     const sin = document.getElementById("dev-sin-match");
     if (sin) sin.hidden = visibles > 0;

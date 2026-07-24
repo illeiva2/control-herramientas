@@ -35,8 +35,11 @@
         </div>
         <div class="campo ancho">
           <label>Trabajador <small>(nombre o DNI)</small></label>
-          <input type="text" id="empleado-buscar" placeholder="Escribí para buscar…"
-                 value="{{ empleado.nombre if empleado else '' }}">
+          <div class="input-limpiable">
+            <input type="text" id="empleado-buscar" placeholder="Escribí para buscar…"
+                   value="{{ empleado.nombre if empleado else '' }}">
+            <button type="button" class="input-clear" id="empleado-clear" title="Borrar y cargar otro trabajador" aria-label="Borrar trabajador" hidden>✕</button>
+          </div>
           <input type="hidden" id="empleado_id" value="{{ empleado.id if empleado else '' }}">
           <div class="sugerencias" id="empleado-sug"></div>
         </div>
@@ -101,9 +104,26 @@
     </div>
   </div>
 
-  <!-- rail resumen -->
+  <!-- rail: acceso rapido a trabajadores + resumen -->
   <aside class="reg-rail">
-    <div class="rail-t">Resumen</div>
+    <div class="rail-t" id="rail-lista-titulo">Últimos atendidos</div>
+    <div class="rail-lista" id="rail-recientes" {% if tipo == 'DEVOLUCION' %}hidden{% endif %}>
+      {% for r in recientes %}
+        <button type="button" class="rail-emp" data-id="{{ r.id }}" data-nombre="{{ r.nombre }}">
+          <span class="re-nombre">{{ r.nombre }}</span>
+        </button>
+      {% else %}<p class="nota" style="margin:4px 0 10px">Sin movimientos todavía.</p>{% endfor %}
+    </div>
+    <div class="rail-lista" id="rail-deudores" {% if tipo != 'DEVOLUCION' %}hidden{% endif %}>
+      {% for d in deudores %}
+        <button type="button" class="rail-emp" data-id="{{ d.id }}" data-nombre="{{ d.nombre }}">
+          <span class="re-nombre">{{ d.nombre }}</span>
+          <span class="re-datos">{{ d.unidades }} unid.{% if d.dias is not none and d.dias > 1 %} · <b class="re-atraso">hace {{ d.dias }} días</b>{% endif %}</span>
+        </button>
+      {% else %}<p class="nota" style="margin:4px 0 10px">Nadie debe herramientas. 👌</p>{% endfor %}
+    </div>
+
+    <div class="rail-t" style="margin-top:16px">Resumen</div>
     <div class="res-row"><span class="k">Trabajador</span><span class="v" id="sum-worker">—</span></div>
     <div class="res-row"><span class="k">Líneas de entrega</span><span class="v mono ent" id="sum-ent">0</span></div>
     <div class="res-row"><span class="k">Líneas de devolución</span><span class="v mono dev" id="sum-dev">0</span></div>

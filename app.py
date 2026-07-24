@@ -228,12 +228,41 @@ def registrar():
     if request.args.get("empleado_id"):
         empleado = c.execute("SELECT * FROM empleados WHERE id=?",
                              (request.args["empleado_id"],)).fetchone()
+
+    # listas rapidas del rail: ultimos atendidos (entrega) y deudores (devolucion)
+    recientes = c.execute("""
+        SELECT e.id, e.nombre FROM (
+            SELECT empleado_id, MAX(id) AS ult FROM movimientos GROUP BY empleado_id
+        ) u JOIN empleados e ON e.id = u.empleado_id
+        WHERE e.activo = 1 ORDER BY u.ult DESC LIMIT 10
+    """).fetchall()
+    deudores_raw = c.execute(f"""
+        SELECT e.id, e.nombre, SUM(s.pendiente) AS unidades, COUNT(*) AS items,
+               MIN((SELECT MAX(m.fecha) FROM movimientos m
+                     WHERE m.empleado_id = s.empleado_id
+                       AND m.herramienta_id = s.herramienta_id
+                       AND m.tipo = 'ENTREGA')) AS mas_vieja
+        FROM ({SALDO_EMP_HTA}) s JOIN empleados e ON e.id = s.empleado_id
+        WHERE s.pendiente > 0
+        GROUP BY e.id, e.nombre
+        ORDER BY mas_vieja ASC NULLS LAST, unidades DESC LIMIT 10
+    """).fetchall()
+    deudores = []
+    for d in deudores_raw:
+        d = dict(d)
+        try:
+            d["dias"] = (date.today() - date.fromisoformat(d["mas_vieja"])).days
+        except (TypeError, ValueError):
+            d["dias"] = None
+        deudores.append(d)
+
     return render_template("registrar.html",
                            tipo=request.args.get("tipo", "ENTREGA"),
                            fecha=request.args.get("fecha", date.today().isoformat()),
                            empleado=empleado,
                            almacenista_id=request.args.get("almacenista_id", ""),
-                           condiciones=condiciones, almacenistas=almacenistas)
+                           condiciones=condiciones, almacenistas=almacenistas,
+                           recientes=recientes, deudores=deudores)
 
 
 def nombre_modulo(m):

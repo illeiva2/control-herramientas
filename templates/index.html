@@ -68,12 +68,15 @@
       <div class="grupo-dev" data-emp="{{ g.empleado_id }}" data-buscar="{{ g.empleado|lower }}">
         <div class="gd-head">
           <div class="gd-nombre">
+            <button type="button" class="gd-toggle" title="Colapsar / expandir" aria-expanded="true">▾</button>
             <a href="{{ url_for('empleado', eid=g.empleado_id) }}">{{ g.empleado }}</a>
+            <span class="nota gd-items-n">{{ g["items"]|length }} ítem(s)</span>
             {% if g.dias_max > 1 %}<span class="badge-bad">hace {{ g.dias_max }} días</span>{% endif %}
           </div>
           <div class="gd-acciones">
+            <button type="button" class="btn mini gd-devolver-sel" hidden>⮐ Devolver seleccionadas (<span class="n">0</span>)</button>
             {% if devolvibles|length >= 2 %}
-            <button type="button" class="btn mini gd-devolver-todo">⮐ Devolver todo ({{ devolvibles|length }})</button>
+            <button type="button" class="btn mini sec gd-devolver-todo">⮐ Devolver todo ({{ devolvibles|length }})</button>
             {% endif %}
             <a class="gd-abrir nota" href="{{ url_for('registrar', empleado_id=g.empleado_id, tipo='DEVOLUCION') }}"
                title="Para casos complejos: mezclar con entregas, fecha retroactiva, forzar">Abrir en Registrar</a>
@@ -85,6 +88,10 @@
              data-codigo="{{ p.codigo }}" data-nombre="{{ p.herramienta }}"
              data-buscar="{{ (p.codigo ~ ' ' ~ p.herramienta)|lower }}">
           <div class="fp-txt">
+            {% if p.pendiente > 0 %}
+            <input type="checkbox" class="fp-check" title="Seleccionar para devolver varias juntas"
+                   aria-label="Seleccionar {{ p.herramienta }}">
+            {% endif %}
             <span class="code">{{ p.codigo }}</span> {{ p.herramienta }}
             <span class="fp-cant">× <b>{{ p.pendiente }}</b></span>
             {% if p.pendiente <= 0 %}
