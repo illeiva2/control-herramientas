@@ -866,15 +866,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // ---- colapsar / expandir por trabajador ----
+  // ---- colapsar / expandir por trabajador (colapsado por defecto) ----
+  function toggleGrupo(grupo, abrir) {
+    if (abrir === undefined) grupo.classList.toggle("gd-colapsado");
+    else grupo.classList.toggle("gd-colapsado", !abrir);
+    const tg = grupo.querySelector(".gd-toggle");
+    if (tg) {
+      tg.textContent = grupo.classList.contains("gd-colapsado") ? "▸" : "▾";
+      tg.setAttribute("aria-expanded", grupo.classList.contains("gd-colapsado") ? "false" : "true");
+    }
+    if (grupo.classList.contains("gd-colapsado")) cerrarPop();
+  }
   grupos.addEventListener("click", (e) => {
-    const tg = e.target.closest(".gd-toggle");
-    if (!tg) return;
-    const grupo = tg.closest(".grupo-dev");
-    const colapsado = grupo.classList.toggle("gd-colapsado");
-    tg.textContent = colapsado ? "▸" : "▾";
-    tg.setAttribute("aria-expanded", colapsado ? "false" : "true");
-    if (colapsado) cerrarPop();
+    const head = e.target.closest(".gd-head");
+    if (!head) return;
+    // el nombre (link), los botones de devolver y "Abrir en Registrar" no colapsan
+    if (e.target.closest("a, .gd-devolver-sel, .gd-devolver-todo")) return;
+    toggleGrupo(head.closest(".grupo-dev"));
   });
 
   // ---- filtro en vivo ----
@@ -892,11 +900,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       g.hidden = filasVisibles === 0;
       if (!g.hidden) visibles++;
-      if (q && !g.hidden && g.classList.contains("gd-colapsado")) {
-        g.classList.remove("gd-colapsado");
-        const t = g.querySelector(".gd-toggle");
-        if (t) { t.textContent = "▾"; t.setAttribute("aria-expanded", "true"); }
-      }
+      if (q && !g.hidden && g.classList.contains("gd-colapsado")) toggleGrupo(g, true);
     });
     const sin = document.getElementById("dev-sin-match");
     if (sin) sin.hidden = visibles > 0;

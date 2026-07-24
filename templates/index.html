@@ -65,10 +65,10 @@
     <div id="dev-grupos">
       {% for g in grupos_pend %}
       {% set devolvibles = g["items"] | selectattr("pendiente", "gt", 0) | list %}
-      <div class="grupo-dev" data-emp="{{ g.empleado_id }}" data-buscar="{{ g.empleado|lower }}">
+      <div class="grupo-dev gd-colapsado" data-emp="{{ g.empleado_id }}" data-buscar="{{ g.empleado|lower }}">
         <div class="gd-head">
           <div class="gd-nombre">
-            <button type="button" class="gd-toggle" title="Colapsar / expandir" aria-expanded="true">▾</button>
+            <button type="button" class="gd-toggle" title="Colapsar / expandir" aria-expanded="false">▸</button>
             <a href="{{ url_for('empleado', eid=g.empleado_id) }}">{{ g.empleado }}</a>
             <span class="nota gd-items-n">{{ g["items"]|length }} ítem(s)</span>
             {% if g.dias_max > 1 %}<span class="badge-bad">hace {{ g.dias_max }} días</span>{% endif %}
