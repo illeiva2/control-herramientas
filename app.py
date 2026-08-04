@@ -553,6 +553,125 @@ def caja(kid):
                            estado=estado_caja(c, kid))
 
 
+@app.route("/cajas/<int:kid>/imprimir")
+def caja_imprimir(kid):
+    """Vista limpia para imprimir o guardar como PDF: checklist de la dotacion
+    con columnas para tildar a mano en el campo, estado y firmas."""
+    c = db()
+    k = c.execute("SELECT * FROM cajas WHERE id = ?", (kid,)).fetchone()
+    if not k:
+        return redirect(url_for("cajas"))
+    items = c.execute("""
+        SELECT i.*, h.codigo, h.nombre FROM caja_items i
+        JOIN herramientas h ON h.id = i.herramienta_id
+        WHERE i.caja_id = ? AND (i.dotacion > 0 OR i.actual > 0) ORDER BY h.nombre
+    """, (kid,)).fetchall()
+    ultimo_envio = c.execute("""
+        SELECT e.*, emp.nombre AS responsable FROM caja_eventos e
+        LEFT JOIN empleados emp ON emp.id = e.empleado_id
+        WHERE e.caja_id = ? AND e.tipo = 'ENVIO' ORDER BY e.id DESC LIMIT 1
+    """, (kid,)).fetchone()
+    from datetime import datetime
+    return render_template("caja_imprimir.html", k=k, items=items,
+                           estado=estado_caja(c, kid), ultimo_envio=ultimo_envio,
+                           impreso=datetime.now().strftime("%d/%m/%Y %H:%M"))
+
+
+@app.route("/cajas/<int:kid>/exportar")
+def caja_exportar(kid):
+    """Detalle de la caja en Excel: dotacion + historial de envios/retornos."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    c = db()
+    k = c.execute("SELECT * FROM cajas WHERE id = ?", (kid,)).fetchone()
+    if not k:
+        return redirect(url_for("cajas"))
+    items = c.execute("""
+        SELECT i.*, h.codigo, h.nombre FROM caja_items i
+        JOIN herramientas h ON h.id = i.herramienta_id
+        WHERE i.caja_id = ? AND (i.dotacion > 0 OR i.actual > 0) ORDER BY h.nombre
+    """, (kid,)).fetchall()
+    eventos = c.execute("""
+        SELECT e.*, emp.nombre AS responsable,
+               (SELECT COALESCE(SUM(x.cantidad_esperada - x.cantidad_real), 0)
+                  FROM caja_evento_items x
+                 WHERE x.evento_id = e.id AND x.cantidad_real < x.cantidad_esperada) AS faltantes
+        FROM caja_eventos e LEFT JOIN empleados emp ON emp.id = e.empleado_id
+        WHERE e.caja_id = ? ORDER BY e.id DESC
+    """, (kid,)).fetchall()
+    estado = estado_caja(c, kid)
+
+    verde = "3D7A37"
+    gris = "EFECE7"
+    fino = Side(style="thin", color="D6D1C8")
+    borde = Border(left=fino, right=fino, top=fino, bottom=fino)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Dotación"
+    ws["A1"] = f"Caja: {k['nombre']}"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = k["descripcion"] or ""
+    ws["A3"] = f"Estado: {estado['texto']}"
+    ws["A4"] = f"Generado: {date.today().strftime('%d/%m/%Y')} — Control de Herramientas (Pañol)"
+    ws["A4"].font = Font(size=9, color="777777")
+
+    fila = 6
+    cabeceras = ["Código", "Herramienta", "Debe tener", "Tiene", "Faltan"]
+    for col, texto in enumerate(cabeceras, 1):
+        cel = ws.cell(row=fila, column=col, value=texto)
+        cel.font = Font(bold=True, color="FFFFFF")
+        cel.fill = PatternFill("solid", start_color=verde)
+        cel.border = borde
+        cel.alignment = Alignment(horizontal="center" if col > 2 else "left")
+    for i, it in enumerate(items, 1):
+        f = fila + i
+        faltan = it["dotacion"] - it["actual"]
+        valores = [it["codigo"], it["nombre"], it["dotacion"], it["actual"], faltan if faltan > 0 else ""]
+        for col, v in enumerate(valores, 1):
+            cel = ws.cell(row=f, column=col, value=v)
+            cel.border = borde
+            if col > 2:
+                cel.alignment = Alignment(horizontal="center")
+            if i % 2 == 0:
+                cel.fill = PatternFill("solid", start_color=gris)
+        if faltan > 0:
+            ws.cell(row=f, column=5).font = Font(bold=True, color="B23A2D")
+    tot = fila + len(items) + 1
+    ws.cell(row=tot, column=2, value="TOTALES").font = Font(bold=True)
+    ws.cell(row=tot, column=3, value=f"=SUM(C{fila+1}:C{fila+len(items)})").font = Font(bold=True)
+    ws.cell(row=tot, column=4, value=f"=SUM(D{fila+1}:D{fila+len(items)})").font = Font(bold=True)
+    for col, ancho in enumerate([12, 48, 12, 12, 12], 1):
+        ws.column_dimensions[get_column_letter(col)].width = ancho
+
+    ws2 = wb.create_sheet("Envíos y retornos")
+    cab2 = ["Fecha", "Tipo", "Responsable", "Destino", "Faltantes", "Observación"]
+    for col, texto in enumerate(cab2, 1):
+        cel = ws2.cell(row=1, column=col, value=texto)
+        cel.font = Font(bold=True, color="FFFFFF")
+        cel.fill = PatternFill("solid", start_color=verde)
+        cel.border = borde
+    for i, e in enumerate(eventos, 2):
+        vals = [e["fecha"], "Envío" if e["tipo"] == "ENVIO" else "Retorno",
+                e["responsable"] or "", e["destino"] or "",
+                e["faltantes"] or "", e["observacion"] or ""]
+        for col, v in enumerate(vals, 1):
+            ws2.cell(row=i, column=col, value=v).border = borde
+    for col, ancho in enumerate([12, 10, 26, 22, 10, 40], 1):
+        ws2.column_dimensions[get_column_letter(col)].width = ancho
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nombre_ok = "".join(ch for ch in k["nombre"] if ch.isalnum() or ch in " -_")
+    return Response(buf.getvalue(),
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition":
+                             f"attachment; filename=Caja {nombre_ok} {date.today().isoformat()}.xlsx"})
+
+
 @app.route("/cajas/<int:kid>/transferir", methods=["POST"])
 def caja_transferir(kid):
     """Todas las operaciones de contenido de la caja, en una transaccion:

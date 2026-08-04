@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Caja {{ k.nombre }} — Control de Herramientas</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "Segoe UI", system-ui, Arial, sans-serif;
+    color: #1a1611; font-size: 13px; line-height: 1.45; background: #efece7;
+  }
+  .hoja {
+    max-width: 800px; margin: 24px auto; background: #fff; padding: 36px 42px;
+    box-shadow: 0 4px 22px rgba(0,0,0,.12);
+  }
+  /* barra visible solo en pantalla */
+  .toolbar {
+    max-width: 800px; margin: 18px auto 0; display: flex; gap: 10px; justify-content: flex-end;
+  }
+  .toolbar a, .toolbar button {
+    display: inline-flex; align-items: center; gap: 7px; border-radius: 8px;
+    padding: 9px 16px; font-size: 14px; font-weight: 700; cursor: pointer; text-decoration: none;
+  }
+  .toolbar button { background: #3d7a37; color: #fff; border: none; }
+  .toolbar a { background: #fff; color: #1a1611; border: 1.5px solid #d6d1c8; }
+
+  .encabezado { display: flex; justify-content: space-between; align-items: flex-start;
+    border-bottom: 3px solid #3d7a37; padding-bottom: 14px; margin-bottom: 18px; }
+  .marca { font-size: 11px; font-weight: 700; letter-spacing: .16em; color: #3d7a37; text-transform: uppercase; }
+  h1 { font-size: 22px; margin: 4px 0 2px; }
+  .desc { color: #5c564d; }
+  .meta { text-align: right; font-size: 11.5px; color: #5c564d; }
+  .estado {
+    display: inline-block; margin-top: 6px; padding: 4px 12px; border-radius: 20px;
+    font-weight: 700; font-size: 11.5px; border: 1.5px solid #3d7a37; color: #3d7a37;
+  }
+  .estado.campo { border-color: #17537f; color: #17537f; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  th {
+    background: #3d7a37; color: #fff; text-align: left; padding: 7px 9px;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+  }
+  td { padding: 7px 9px; border: 1px solid #d6d1c8; }
+  tbody tr:nth-child(even) td { background: #f6f4f0; }
+  .c { text-align: center; }
+  .code { font-weight: 700; color: #31632c; }
+  .falta { color: #b23a2d; font-weight: 700; }
+  .tilde { width: 52px; }
+  .obs-col { width: 130px; }
+  tfoot td { font-weight: 700; background: #efece7; }
+
+  .resumen { margin-top: 10px; font-size: 12px; color: #5c564d; }
+  .firmas { display: flex; gap: 30px; margin-top: 54px; }
+  .firma { flex: 1; text-align: center; }
+  .firma .linea { border-top: 1.5px solid #1a1611; margin-bottom: 5px; }
+  .firma .rol { font-size: 11px; color: #5c564d; text-transform: uppercase; letter-spacing: .06em; }
+  .pie {
+    margin-top: 26px; padding-top: 10px; border-top: 1px solid #d6d1c8;
+    font-size: 10px; color: #9a948b; display: flex; justify-content: space-between;
+  }
+
+  @media print {
+    body { background: #fff; }
+    .toolbar { display: none; }
+    .hoja { margin: 0; max-width: none; box-shadow: none; padding: 0; }
+    @page { size: A4; margin: 16mm 14mm; }
+    th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    tbody tr:nth-child(even) td, tfoot td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    tr { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <a href="{{ url_for('caja', kid=k.id) }}">← Volver a la caja</a>
+  <a href="{{ url_for('caja_exportar', kid=k.id) }}">⬇ Exportar Excel</a>
+  <button onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
+</div>
+
+<div class="hoja">
+  <div class="encabezado">
+    <div>
+      <div class="marca">Control de Herramientas — Pañol</div>
+      <h1>📦 {{ k.nombre }}</h1>
+      {% if k.descripcion %}<div class="desc">{{ k.descripcion }}</div>{% endif %}
+      <span class="estado {{ 'campo' if estado.en_campo }}">{{ estado.texto }}</span>
+    </div>
+    <div class="meta">
+      Impreso: {{ impreso }}<br>
+      {% if ultimo_envio %}
+        Último envío: {{ ultimo_envio.fecha }}{% if ultimo_envio.destino %} — {{ ultimo_envio.destino }}{% endif %}<br>
+        {% if ultimo_envio.responsable %}Responsable: {{ ultimo_envio.responsable }}{% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:34px">#</th>
+        <th style="width:70px">Código</th>
+        <th>Herramienta</th>
+        <th class="c" style="width:70px">Debe tener</th>
+        <th class="c" style="width:56px">Tiene</th>
+        <th class="c tilde">Sale ✓</th>
+        <th class="c tilde">Vuelve ✓</th>
+        <th class="obs-col">Condición / Obs.</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for i in items %}
+      <tr>
+        <td class="c">{{ loop.index }}</td>
+        <td class="code">{{ i.codigo }}</td>
+        <td>{{ i.nombre }}</td>
+        <td class="c">{{ i.dotacion }}</td>
+        <td class="c {% if i.actual < i.dotacion %}falta{% endif %}">{{ i.actual }}</td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="3">TOTALES — {{ items|length }} herramienta(s)</td>
+        <td class="c">{{ items | sum(attribute='dotacion') }}</td>
+        <td class="c">{{ items | sum(attribute='actual') }}</td>
+        <td colspan="3"></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  {% set faltantes = items | sum(attribute='dotacion') - items | sum(attribute='actual') %}
+  {% if faltantes > 0 %}
+  <p class="resumen">⚠ La caja tiene <b class="falta">{{ faltantes }} unidad(es) faltante(s)</b> respecto de su dotación.</p>
+  {% endif %}
+  <p class="resumen">Marcar «Sale» al despachar la caja y «Vuelve» al recibirla. Anotar condición solo si vuelve dañada.</p>
+
+  <div class="firmas">
+    <div class="firma"><div class="linea"></div><div class="rol">Entregó (pañol)</div></div>
+    <div class="firma"><div class="linea"></div><div class="rol">Responsable en el campo</div></div>
+    <div class="firma"><div class="linea"></div><div class="rol">Recibió / Controló</div></div>
+  </div>
+
+  <div class="pie">
+    <span>Control de Herramientas — sistema de pañol</span>
+    <span>Caja «{{ k.nombre }}» · {{ impreso }}</span>
+  </div>
+</div>
+</body>
+</html>

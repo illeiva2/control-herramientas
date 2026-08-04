@@ -17,6 +17,10 @@
     </div>
   </div>
   <div class="acciones" style="margin:0">
+    <a class="btn sec" href="{{ url_for('caja_imprimir', kid=k.id) }}" target="_blank"
+       title="Vista para imprimir o guardar como PDF, con checklist para tildar a mano">🖨 Imprimir / PDF</a>
+    <a class="btn sec" href="{{ url_for('caja_exportar', kid=k.id) }}"
+       title="Descargar el detalle en Excel (dotación + historial)">⬇ Excel</a>
   {% if estado.en_campo %}
     <a class="btn grande" href="{{ url_for('caja_evento', kid=k.id, tipo='retorno') }}">⮐ Registrar retorno</a>
   {% else %}
