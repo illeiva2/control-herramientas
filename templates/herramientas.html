@@ -6,7 +6,13 @@
     <div class="eyebrow">Inventario</div>
     <h1>Herramientas</h1>
   </div>
-  <button type="button" class="btn sec" id="btn-expandir">Expandir todo</button>
+  <div class="acciones" style="margin:0">
+    <a class="btn sec" href="{{ url_for('herramientas_imprimir') }}" target="_blank"
+       title="Planilla A4 por góndola y estante, con columna para contar a mano">🖨 Imprimir / PDF</a>
+    <a class="btn sec" href="{{ url_for('herramientas_exportar') }}"
+       title="Descargar el catálogo completo en Excel">⬇ Excel</a>
+    <button type="button" class="btn sec" id="btn-expandir">Expandir todo</button>
+  </div>
 </div>
 
 <div class="buscador" id="filtro-htas">

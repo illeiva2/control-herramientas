@@ -273,21 +273,20 @@ def nombre_modulo(m):
     return f"Góndola {m}"
 
 
-@app.route("/herramientas")
-def herramientas():
-    c = db()
+def catalogo_datos(c, solo_activas=True):
+    """Filas del catalogo expandidas por ubicacion + agrupadas en gondolas/estantes.
+    Compartido por la pagina, la vista de impresion y el Excel."""
     base_rows = c.execute(f"""
         SELECT h.*, COALESCE(s.pendiente, 0) AS pendiente,
                h.cantidad - COALESCE(s.pendiente, 0) AS disponible
         FROM herramientas h LEFT JOIN ({SALDO_HTA}) s ON s.herramienta_id = h.id
-        WHERE h.activo = 1
+        {"WHERE h.activo = 1" if solo_activas else ""}
     """).fetchall()
 
-    # una herramienta con varias ubicaciones aparece en cada una de sus secciones
     ubic_map = {}
     for u in c.execute("SELECT herramienta_id, gondola, estante, cantidad FROM ubicaciones").fetchall():
         ubic_map.setdefault(u["herramienta_id"], []).append(u)
-    rows = []
+    filas = []
     for h in base_rows:
         us = ubic_map.get(h["id"])
         if us:
@@ -295,11 +294,11 @@ def herramientas():
                 d = dict(h)
                 d["modulo"], d["estante"] = u["gondola"], u["estante"]
                 d["en_ubicacion"], d["multi"] = u["cantidad"], len(us) > 1
-                rows.append(d)
+                filas.append(d)
         else:
             d = dict(h)
             d["en_ubicacion"], d["multi"] = None, False
-            rows.append(d)
+            filas.append(d)
 
     def orden(h):
         m, e = h["modulo"], h["estante"]
@@ -321,9 +320,8 @@ def herramientas():
             return ""
         return f"Estante {e}"
 
-    # dos niveles: gondola/modulo -> estantes
     grupos = []
-    for h in sorted(rows, key=orden):
+    for h in sorted(filas, key=orden):
         mod = str(h["modulo"] or "")
         if not grupos or grupos[-1]["modulo"] != mod:
             grupos.append({"modulo": mod, "nombre": nombre_modulo(h["modulo"]),
@@ -334,7 +332,113 @@ def herramientas():
             g["subgrupos"].append({"etiqueta": etq, "items": []})
         g["subgrupos"][-1]["items"].append(h)
         g["total"] += 1
+    return base_rows, filas, grupos
 
+
+@app.route("/herramientas/imprimir")
+def herramientas_imprimir():
+    """Catalogo en hoja A4 para inventario fisico: agrupado por gondola y
+    estante, con columna vacia para contar a mano."""
+    from datetime import datetime
+    c = db()
+    base_rows, filas, grupos = catalogo_datos(c)
+    return render_template("herramientas_imprimir.html", grupos=grupos,
+                           total=len(base_rows), lineas=len(filas),
+                           unidades=sum(h["cantidad"] for h in base_rows),
+                           prestadas=sum(h["pendiente"] for h in base_rows),
+                           impreso=datetime.now().strftime("%d/%m/%Y %H:%M"))
+
+
+@app.route("/herramientas/exportar")
+def herramientas_exportar():
+    """Catalogo completo en Excel: una hoja de detalle y otra de resumen por ubicacion."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    c = db()
+    base_rows, filas, grupos = catalogo_datos(c, solo_activas=False)
+    verde, gris = "3D7A37", "EFECE7"
+    fino = Side(style="thin", color="D6D1C8")
+    borde = Border(left=fino, right=fino, top=fino, bottom=fino)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Catálogo"
+    ws["A1"] = "Catálogo de herramientas — Pañol"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = (f"{len(base_rows)} herramientas · "
+                f"{sum(h['cantidad'] for h in base_rows)} unidades · "
+                f"{sum(h['pendiente'] for h in base_rows)} prestadas")
+    ws["A3"] = f"Generado: {date.today().strftime('%d/%m/%Y')} — Control de Herramientas"
+    ws["A3"].font = Font(size=9, color="777777")
+
+    fila = 5
+    cab = ["Código", "Herramienta", "Detalle", "Góndola", "Estante", "En ubicación",
+           "Stock total", "Prestadas", "Disponibles", "Estado"]
+    for col, texto in enumerate(cab, 1):
+        cel = ws.cell(row=fila, column=col, value=texto)
+        cel.font = Font(bold=True, color="FFFFFF")
+        cel.fill = PatternFill("solid", start_color=verde)
+        cel.border = borde
+        cel.alignment = Alignment(horizontal="center" if col > 5 else "left")
+    for i, h in enumerate(filas, 1):
+        f = fila + i
+        vals = [h["codigo"], h["nombre"], h["detalle"] or "",
+                nombre_modulo(h["modulo"]) if h["modulo"] else "",
+                h["estante"] or "", h["en_ubicacion"] if h["en_ubicacion"] is not None else "",
+                h["cantidad"], h["pendiente"], h["disponible"],
+                "Activa" if h["activo"] else "Dada de baja"]
+        for col, v in enumerate(vals, 1):
+            cel = ws.cell(row=f, column=col, value=v)
+            cel.border = borde
+            if col > 5:
+                cel.alignment = Alignment(horizontal="center")
+            if i % 2 == 0:
+                cel.fill = PatternFill("solid", start_color=gris)
+        if h["pendiente"]:
+            ws.cell(row=f, column=8).font = Font(bold=True, color="A86A08")
+        if not h["activo"]:
+            ws.cell(row=f, column=10).font = Font(color="9A948B")
+    ws.freeze_panes = ws.cell(row=fila + 1, column=1)
+    ws.auto_filter.ref = f"A{fila}:J{fila + len(filas)}"
+    for col, ancho in enumerate([12, 46, 30, 16, 10, 13, 12, 11, 12, 14], 1):
+        ws.column_dimensions[get_column_letter(col)].width = ancho
+
+    ws2 = wb.create_sheet("Por ubicación")
+    for col, texto in enumerate(["Góndola", "Estante", "Herramientas", "Unidades"], 1):
+        cel = ws2.cell(row=1, column=col, value=texto)
+        cel.font = Font(bold=True, color="FFFFFF")
+        cel.fill = PatternFill("solid", start_color=verde)
+        cel.border = borde
+    r = 2
+    for g in grupos:
+        for sg in g["subgrupos"]:
+            unidades = sum((h["en_ubicacion"] if h["en_ubicacion"] is not None else h["cantidad"])
+                           for h in sg["items"])
+            for col, v in enumerate([g["nombre"], sg["etiqueta"] or "—",
+                                     len(sg["items"]), unidades], 1):
+                cel = ws2.cell(row=r, column=col, value=v)
+                cel.border = borde
+                if col > 2:
+                    cel.alignment = Alignment(horizontal="center")
+            r += 1
+    for col, ancho in enumerate([18, 14, 14, 12], 1):
+        ws2.column_dimensions[get_column_letter(col)].width = ancho
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(buf.getvalue(),
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition":
+                             f"attachment; filename=Catalogo herramientas {date.today().isoformat()}.xlsx"})
+
+
+@app.route("/herramientas")
+def herramientas():
+    c = db()
+    base_rows, rows, grupos = catalogo_datos(c)
     modulos = [(g["modulo"], g["nombre"]) for g in grupos]
     return render_template("herramientas.html", grupos=grupos, modulos=modulos,
                            total=len(rows), q=request.args.get("q", "").strip())
