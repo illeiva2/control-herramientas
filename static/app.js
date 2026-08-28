@@ -376,8 +376,10 @@ document.addEventListener("DOMContentLoaded", () => {
     $("tabla-lote").hidden = lote.length === 0;
     $("lote-vacio").hidden = lote.length > 0;
     const cc = $("cart-count"); if (cc) cc.textContent = lote.length;
-    btnRegistrar.disabled = lote.length === 0;
-    btnRegistrar.textContent = `Registrar todo (${lote.length})`;
+    // el boton del rail cuenta tambien lo cargado en el paso 2 (se registra junto)
+    const total = lote.length + (hayLineaEnForm() ? 1 : 0);
+    btnRegistrar.disabled = total === 0;
+    const n = $("btn-registrar-n"); if (n) n.textContent = total;
     pintarResumen();
   }
 
@@ -405,7 +407,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function mostrarInfoHta(it) {
     htaElegida = it;
-    if (!it) { infoHta.textContent = ""; return; }
+    if (!it) { infoHta.textContent = ""; pintarLote(); return; }
+    pintarLote();
     const partes = [];
     if (it.ubicacion) partes.push("📍 " + it.ubicacion);
     partes.push(`Inventario: ${it.cantidad} · Prestadas: ${it.pendiente} · Disponibles: ${it.disponible}`);
@@ -446,12 +449,36 @@ document.addEventListener("DOMContentLoaded", () => {
         mostrarInfoHta(p);   // fija htaElegida = p (trae el id de la herramienta)
         infoHta.textContent = `Pendiente de devolver: ${p.pendiente}`;
         cantidad.value = p.pendiente;
+        colapsarPendientes(true);   // ya elegiste: despejar la lista
         (condSelect || cantidad).focus();
       });
       chips.appendChild(b);
     });
     box.hidden = data.length === 0;
+    // con muchos pendientes la lista tapa el formulario: de 4 en adelante arranca minimizada
+    const titulo = $("pend-titulo");
+    if (titulo) {
+      titulo.textContent = data.length === 1
+        ? "Tiene 1 herramienta pendiente de devolver"
+        : `Tiene ${data.length} herramientas pendientes de devolver`;
+    }
+    colapsarPendientes(data.length > 3);
     pintarResumen();
+  }
+
+  function colapsarPendientes(colapsar) {
+    const box = $("pendientes-emp"), tg = $("pend-toggle");
+    if (!box || !tg) return;
+    box.classList.toggle("pend-colapsado", colapsar);
+    tg.setAttribute("aria-expanded", colapsar ? "false" : "true");
+    const ch = tg.querySelector(".pend-chevron");
+    if (ch) ch.textContent = colapsar ? "▸" : "▾";
+  }
+
+  if ($("pend-toggle")) {
+    $("pend-toggle").addEventListener("click", () => {
+      colapsarPendientes(!$("pendientes-emp").classList.contains("pend-colapsado"));
+    });
   }
 
   combobox({
@@ -522,17 +549,19 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ------- agregar linea -------
+  const hayLineaEnForm = () => !!(htaHidden.value && htaElegida);
+
   function agregarDesdeFormulario() {
-    if (!htaHidden.value || !htaElegida) {
+    if (!hayLineaEnForm()) {
       mensaje(false, "Elegí la herramienta desde la lista de sugerencias.");
       htaInput.focus();
-      return;
+      return false;
     }
     const cant = parseInt(cantidad.value, 10);
     if (!cant || cant < 1) {
       mensaje(false, "La cantidad debe ser 1 o más.");
       cantidad.focus();
-      return;
+      return false;
     }
     $("msg-error").hidden = true;
     $("msg-ok").hidden = true;
@@ -541,26 +570,44 @@ document.addEventListener("DOMContentLoaded", () => {
       condSelect.options[condSelect.selectedIndex]?.text,
       $("observacion").value.trim());
     // listo para la siguiente linea
+    limpiarForm();
+    return true;
+  }
+
+  function limpiarForm() {
     htaInput.value = ""; htaHidden.value = ""; htaElegida = null;
     infoHta.textContent = ""; cantidad.value = 1; $("observacion").value = "";
     htaInput.focus();
+    pintarLote();
   }
 
   $("btn-agregar").addEventListener("click", agregarDesdeFormulario);
+
+  // Enter en cualquier campo del paso 2 registra directo (flujo de mostrador)
   [cantidad, $("observacion"), condSelect].forEach((el) => {
     if (el) el.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); agregarDesdeFormulario(); }
+      if (e.key === "Enter") { e.preventDefault(); registrarTodo(); }
     });
   });
 
-  // ------- registrar todo -------
-  btnRegistrar.addEventListener("click", async () => {
+  // ------- registrar (incluye lo cargado en el paso 2 + el carrito) -------
+  const btnLinea = $("btn-registrar-linea");
+
+  async function registrarTodo() {
     if (!empHidden.value) {
       mensaje(false, "Elegí el trabajador desde la lista de sugerencias.");
       empInput.focus();
       return;
     }
+    // lo que este cargado arriba entra al lote sin pedir un clic extra
+    if (hayLineaEnForm() && !agregarDesdeFormulario()) return;
+    if (!lote.length) {
+      mensaje(false, "Cargá una herramienta antes de registrar.");
+      htaInput.focus();
+      return;
+    }
     btnRegistrar.disabled = true;
+    if (btnLinea) btnLinea.disabled = true;
     try {
       const r = await fetch("/api/registrar-lote", {
         method: "POST",
@@ -579,6 +626,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await r.json();
       if (res.ok) {
         lote = [];
+        limpiarForm();
         pintarLote();
         $("forzar").checked = false;
         mensaje(true, res.mensaje);
@@ -593,7 +641,11 @@ document.addEventListener("DOMContentLoaded", () => {
       mensaje(false, "Error de conexión con el servidor: " + err);
       btnRegistrar.disabled = false;
     }
-  });
+    if (btnLinea) btnLinea.disabled = false;
+  }
+
+  btnRegistrar.addEventListener("click", registrarTodo);
+  if (btnLinea) btnLinea.addEventListener("click", registrarTodo);
 
   // si viene precargado el empleado (query param), buscar pendientes
   if (empHidden.value) {

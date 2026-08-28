@@ -53,7 +53,9 @@
         </div>
       </div>
       <div class="pendientes-emp" id="pendientes-emp" hidden>
-        <div class="lbl-pend">Tiene pendiente de devolver — tocá para precargar la devolución</div>
+        <button type="button" class="lbl-pend" id="pend-toggle" aria-expanded="true">
+          <span class="pend-chevron">▾</span> <span id="pend-titulo">Tiene pendiente de devolver</span>
+        </button>
         <div class="chips" id="chips-pendientes"></div>
       </div>
     </div>
@@ -84,9 +86,12 @@
           <input type="text" id="observacion" maxlength="200">
         </div>
       </div>
-      <div class="campo">
-          <label>&nbsp;</label>
-          <button type="button" class="btn sec" id="btn-agregar">＋ Agregar a la lista</button>
+      <div class="acciones-paso2">
+        <button type="button" class="btn grande" id="btn-registrar-linea">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          Registrar</button>
+        <button type="button" class="btn sec" id="btn-agregar"
+                title="Sumar esta herramienta y seguir cargando: se registran todas juntas">＋ Sumar otra</button>
       </div>
     </div>
 
@@ -96,7 +101,7 @@
         <h2 style="margin:0;font-size:14px">Carrito · <span id="cart-count">0</span> líneas</h2>
       </div>
       <div id="lote-vacio" style="padding:34px 16px;text-align:center;color:#9a948b;font-size:14px">
-        Agregá herramientas para armar el movimiento (con «Agregar a la lista» o desde los chips de pendientes).
+        Vacío. Con «Registrar» se guarda directo lo que cargues arriba; usá «Sumar otra» solo si querés juntar varias en un mismo movimiento.
       </div>
       <table id="tabla-lote" hidden>
         <tbody id="lote-body"></tbody>
@@ -138,7 +143,7 @@
 
     <button type="button" class="btn grande" id="btn-registrar" disabled>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-      Registrar todo (0)</button>
+      Registrar todo (<span id="btn-registrar-n">0</span>)</button>
   </aside>
 </div>
 {% endblock %}

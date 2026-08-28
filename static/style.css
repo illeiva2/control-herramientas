@@ -542,3 +542,18 @@ details.seccion > summary .grupo-n {
   width: 100%; text-align: left; padding: 9px 13px;
 }
 .pendientes-emp .chip::after { content: "precargar →"; font-size: 11px; opacity: .65; flex: none; }
+
+/* ---- paso 2: registrar directo + sumar otra ---- */
+.acciones-paso2 { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+
+/* ---- bloque de pendientes minimizable (>3 arranca colapsado) ---- */
+button.lbl-pend {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  background: none; border: none; padding: 0 0 8px; cursor: pointer;
+  font-weight: 700; font-size: 12px; letter-spacing: .06em;
+  text-transform: uppercase; color: #79490a; text-align: left;
+}
+button.lbl-pend:hover { color: #5c3607; }
+.pend-chevron { font-size: 11px; }
+.pendientes-emp.pend-colapsado .chips { display: none; }
+.pendientes-emp.pend-colapsado button.lbl-pend { padding-bottom: 0; }
